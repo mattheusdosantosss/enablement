@@ -1,145 +1,261 @@
-import { hsPost } from "./client";
-import { ownerMap, ownerName } from "./owners";
+import { hs, hsPost } from "./client";
+import { FARMER_SQUADS, ALL_FARMER_EMAILS } from "@/lib/teams";
 import type { ProfRow } from "@/components/ProfessionalTable";
 
-const PIPELINE_FARMER = process.env.HUBSPOT_PIPELINE_FARMER ?? "";
-const PIPELINE_CS = process.env.HUBSPOT_PIPELINE_CS ?? "";
-const STAGE_IN_PROGRESS = process.env.HUBSPOT_CS_STAGE_IN_PROGRESS ?? "";
-const PROP_REVENUE = process.env.HUBSPOT_FARMER_PROP_REVENUE ?? "amount";
-const PROP_ORIGIN = process.env.HUBSPOT_FARMER_PROP_ORIGIN ?? "origem_do_lead";
-const ORIGIN_VALUE = process.env.HUBSPOT_FARMER_ORIGIN_VALUE ?? "Carteira do Farmer";
+// Mesmos stage IDs do psa-farmer
+const STAGE_GANHO_CONTRATO   = process.env.HUBSPOT_STAGE_GANHO_CONTRATO   || "1076664460";
+const STAGE_NEGOCIO_FECHADO  = process.env.HUBSPOT_STAGE_NEGOCIO_FECHADO  || "1076664462";
+const PIPELINE_CS            = process.env.HUBSPOT_PIPELINE_CS            || "748675953";
+
+const GANHO_STAGES = [STAGE_GANHO_CONTRATO, STAGE_NEGOCIO_FECHADO];
+
+// Origens válidas — idêntico ao psa-farmer
+const FARMER_LEAD_ORIGINS = ["Carteira do Farmer", "Curador"];
+
+// Ajuste fuso BRT (UTC-3) para campos datetime
+const BR_OFFSET_MS = 3 * 60 * 60 * 1000;
 
 function monthRange() {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { start: start.getTime(), end: Date.now() };
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const yyyymmdd = (d: Date) => d.toISOString().slice(0, 10);
+  return { from: yyyymmdd(firstDay), to: yyyymmdd(now) };
 }
+
+const utcStart = (d: string) => new Date(d).getTime();
+const utcEnd   = (d: string) => new Date(d).getTime() + 86_400_000 - 1;
+const brtStart = (d: string) => new Date(d).getTime() + BR_OFFSET_MS;
+const brtEnd   = (d: string) => new Date(d).getTime() + BR_OFFSET_MS + 86_400_000 - 1;
 
 export interface FarmerData {
   totals: { meetings: number; inProgress: number; raised: number; converted: number };
   rows: ProfRow[];
 }
 
+// ── Resolve emails → ownerIds ─────────────────────────────────────────────────
+async function resolveOwnerIds(): Promise<Map<string, string>> {
+  const data = await hs<{ results: { id: string; email: string }[] }>(
+    "/crm/v3/owners?limit=200"
+  );
+  const map = new Map<string, string>(); // email → ownerId
+  for (const o of data.results) {
+    const email = (o.email ?? "").toLowerCase();
+    if (ALL_FARMER_EMAILS.has(email)) map.set(email, o.id);
+  }
+  return map;
+}
+
+// ── Resolve estágios CS dinamicamente ─────────────────────────────────────────
+let csStagesCache: { abertos: string[]; } | null = null;
+
+async function resolveCsStages(): Promise<{ abertos: string[] }> {
+  if (csStagesCache) return csStagesCache;
+  try {
+    const data = await hs<{ stages: { id: string; label: string }[] }>(
+      `/crm/v3/pipelines/tickets/${PIPELINE_CS}`
+    );
+    const abertos: string[] = [];
+    for (const s of data.stages) {
+      const l = s.label.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      if (/andamento|iniciar/i.test(l)) abertos.push(s.id);
+    }
+    csStagesCache = { abertos };
+    return csStagesCache;
+  } catch {
+    return { abertos: [] };
+  }
+}
+
+// ── Fetch deals de demandas levantadas (por data de qualificação) ──────────────
+async function fetchRaisedDeals(ownerIds: string[], from: string, to: string) {
+  const body = {
+    filterGroups: [{
+      filters: [
+        { propertyName: "pipedrive___data_de_qualificacao", operator: "HAS_PROPERTY" },
+        { propertyName: "origem_do_lead", operator: "IN", values: FARMER_LEAD_ORIGINS },
+        { propertyName: "sdrfarmer_responsavel", operator: "IN", values: ownerIds.slice(0, 100) },
+        { propertyName: "pipedrive___data_de_qualificacao", operator: "GTE", value: String(utcStart(from)) },
+        { propertyName: "pipedrive___data_de_qualificacao", operator: "LTE", value: String(utcEnd(to)) },
+      ],
+    }],
+    properties: [
+      "sdrfarmer_responsavel",
+      "dealstage",
+      "pipedrive___data_de_qualificacao",
+      "valor_total_do_contrato__bruto___ganho_",
+      "amount",
+      "closed_lost_reason",
+    ],
+    limit: 200,
+  };
+  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
+    "/crm/v3/objects/deals/search", body
+  );
+  return res.results;
+}
+
+// ── Fetch deals ganhos no mês (por closedate) ──────────────────────────────────
+async function fetchConvertedDeals(ownerIds: string[], from: string, to: string) {
+  const body = {
+    filterGroups: [{
+      filters: [
+        { propertyName: "origem_do_lead", operator: "IN", values: FARMER_LEAD_ORIGINS },
+        { propertyName: "sdrfarmer_responsavel", operator: "IN", values: ownerIds.slice(0, 100) },
+        { propertyName: "dealstage", operator: "IN", values: GANHO_STAGES },
+        { propertyName: "closedate", operator: "GTE", value: String(brtStart(from)) },
+        { propertyName: "closedate", operator: "LTE", value: String(brtEnd(to)) },
+      ],
+    }],
+    properties: [
+      "sdrfarmer_responsavel",
+      "valor_total_do_contrato__bruto___ganho_",
+      "amount",
+      "closed_lost_reason",
+    ],
+    limit: 200,
+  };
+  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
+    "/crm/v3/objects/deals/search", body
+  );
+  // Exclui "Fora do MOA" — idêntico ao psa-farmer
+  return res.results.filter(
+    (d) => d.properties.closed_lost_reason !== "Fora do MOA"
+  );
+}
+
+// ── Fetch tickets CS em andamento (snapshot ao vivo) ──────────────────────────
+async function fetchCsInProgress(ownerIds: string[], abertos: string[]) {
+  if (!abertos.length) return [];
+  const body = {
+    filterGroups: [{
+      filters: [
+        { propertyName: "hs_pipeline", operator: "EQ", value: PIPELINE_CS },
+        { propertyName: "hs_pipeline_stage", operator: "IN", values: abertos },
+        { propertyName: "hubspot_owner_id", operator: "IN", values: ownerIds.slice(0, 100) },
+      ],
+    }],
+    properties: ["hubspot_owner_id"],
+    limit: 200,
+  };
+  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
+    "/crm/v3/objects/tickets/search", body
+  );
+  return res.results;
+}
+
+// ── Fetch reuniões agendadas no mês ───────────────────────────────────────────
+async function fetchMeetings(ownerIds: string[], from: string, to: string) {
+  const body = {
+    filterGroups: [{
+      filters: [
+        { propertyName: "hubspot_owner_id", operator: "IN", values: ownerIds.slice(0, 100) },
+        { propertyName: "hs_timestamp", operator: "GTE", value: String(brtStart(from)) },
+        { propertyName: "hs_timestamp", operator: "LTE", value: String(brtEnd(to)) },
+      ],
+    }],
+    properties: ["hubspot_owner_id"],
+    limit: 200,
+  };
+  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
+    "/crm/v3/objects/meetings/search", body
+  );
+  return res.results;
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────────
 export async function getFarmerData(): Promise<FarmerData> {
-  if (!process.env.HUBSPOT_TOKEN || !PIPELINE_FARMER) return SEED_FARMER;
+  if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
 
-  const { start, end } = monthRange();
-  const owners = await ownerMap();
+  const { from, to } = monthRange();
 
-  // Demandas levantadas no mês (deals criados com origem farmer)
-  const raisedRes = await hsPost<{ results: any[] }>(
-    "/crm/v3/objects/deals/search",
-    {
-      filterGroups: [
-        {
-          filters: [
-            { propertyName: "pipeline", operator: "EQ", value: PIPELINE_FARMER },
-            { propertyName: PROP_ORIGIN, operator: "EQ", value: ORIGIN_VALUE },
-            { propertyName: "createdate", operator: "GTE", value: String(start) },
-            { propertyName: "createdate", operator: "LTE", value: String(end) },
-          ],
-        },
-      ],
-      properties: ["hubspot_owner_id", PROP_REVENUE, "dealstage"],
-      limit: 200,
-    }
-  );
+  const [emailToOwner, csStages] = await Promise.all([
+    resolveOwnerIds(),
+    resolveCsStages(),
+  ]);
 
-  // Tramitações em andamento (tickets CS ao vivo)
-  const ticketsRes = await hsPost<{ results: any[] }>(
-    "/crm/v3/objects/tickets/search",
-    {
-      filterGroups: [
-        {
-          filters: [
-            { propertyName: "hs_pipeline", operator: "EQ", value: PIPELINE_CS },
-            { propertyName: "hs_pipeline_stage", operator: "EQ", value: STAGE_IN_PROGRESS },
-          ],
-        },
-      ],
-      properties: ["hubspot_owner_id"],
-      limit: 200,
-    }
-  );
+  const allOwnerIds = Array.from(emailToOwner.values());
+  if (!allOwnerIds.length) return SEED_FARMER;
 
-  // Reuniões agendadas no mês
-  const meetRes = await hsPost<{ results: any[] }>(
-    "/crm/v3/objects/meetings/search",
-    {
-      filterGroups: [
-        {
-          filters: [
-            { propertyName: "hs_timestamp", operator: "GTE", value: String(start) },
-            { propertyName: "hs_timestamp", operator: "LTE", value: String(end) },
-          ],
-        },
-      ],
-      properties: ["hubspot_owner_id"],
-      limit: 200,
-    }
-  );
+  const [raised, converted, tickets, meetings] = await Promise.all([
+    fetchRaisedDeals(allOwnerIds, from, to),
+    fetchConvertedDeals(allOwnerIds, from, to),
+    fetchCsInProgress(allOwnerIds, csStages.abertos),
+    fetchMeetings(allOwnerIds, from, to),
+  ]);
 
-  const byOwner = new Map<string, ProfRow>();
-
-  const ensure = (ownerId: string) => {
-    if (!byOwner.has(ownerId)) {
-      const o = owners.get(ownerId);
-      byOwner.set(ownerId, {
-        id: ownerId,
-        name: o ? ownerName(o) : `Owner ${ownerId}`,
-        email: o?.email ?? "",
+  // ── Agregar por farmer ───────────────────────────────────────────────────────
+  const rows: ProfRow[] = FARMER_SQUADS.flatMap((squad) =>
+    squad.members.map((email) => {
+      const ownerId = emailToOwner.get(email);
+      const row: ProfRow = {
+        id: ownerId ?? email,
+        name: email, // será sobrescrito abaixo se owner encontrado
+        email,
         meetings: 0,
         inProgress: 0,
         raised: 0,
         converted: 0,
-      });
-    }
-    return byOwner.get(ownerId)!;
-  };
+      };
+      if (!ownerId) return row;
 
-  for (const d of raisedRes.results) {
-    const oid = d.properties.hubspot_owner_id;
-    if (!oid) continue;
-    const row = ensure(oid);
-    row.raised = (row.raised ?? 0) + 1;
-    if (d.properties.dealstage === "closedwon") {
-      row.converted = (row.converted ?? 0) + Number(d.properties[PROP_REVENUE] ?? 0);
-    }
+      row.raised = raised.filter(
+        (d) => d.properties.sdrfarmer_responsavel === ownerId
+      ).length;
+
+      row.converted = converted
+        .filter((d) => d.properties.sdrfarmer_responsavel === ownerId)
+        .reduce((s, d) => {
+          const v = d.properties.valor_total_do_contrato__bruto___ganho_;
+          return s + Number(v || d.properties.amount || 0);
+        }, 0);
+
+      row.inProgress = tickets.filter(
+        (t) => t.properties.hubspot_owner_id === ownerId
+      ).length;
+
+      row.meetings = meetings.filter(
+        (m) => m.properties.hubspot_owner_id === ownerId
+      ).length;
+
+      return row;
+    })
+  );
+
+  // Resolve nomes via owners (já buscados)
+  const ownersData = await hs<{ results: { id: string; firstName: string; lastName: string; email: string }[] }>(
+    "/crm/v3/owners?limit=200"
+  );
+  const ownerById = new Map(ownersData.results.map((o) => [o.id, o]));
+  for (const row of rows) {
+    const o = ownerById.get(row.id);
+    if (o) row.name = `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim() || o.email;
   }
 
-  for (const t of ticketsRes.results) {
-    const oid = t.properties.hubspot_owner_id;
-    if (!oid) continue;
-    const row = ensure(oid);
-    row.inProgress = (row.inProgress ?? 0) + 1;
-  }
-
-  for (const m of meetRes.results) {
-    const oid = m.properties.hubspot_owner_id;
-    if (!oid) continue;
-    const row = ensure(oid);
-    row.meetings = (row.meetings ?? 0) + 1;
-  }
-
-  const rows = Array.from(byOwner.values()).sort((a, b) => (b.raised ?? 0) - (a.raised ?? 0));
+  rows.sort((a, b) => (b.raised ?? 0) - (a.raised ?? 0));
 
   return {
     totals: {
-      meetings: rows.reduce((s, r) => s + (r.meetings ?? 0), 0),
+      meetings:   rows.reduce((s, r) => s + (r.meetings ?? 0), 0),
       inProgress: rows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
-      raised: rows.reduce((s, r) => s + (r.raised ?? 0), 0),
-      converted: rows.reduce((s, r) => s + (r.converted ?? 0), 0),
+      raised:     rows.reduce((s, r) => s + (r.raised ?? 0), 0),
+      converted:  rows.reduce((s, r) => s + (r.converted ?? 0), 0),
     },
     rows,
   };
 }
 
+// ── Seed ───────────────────────────────────────────────────────────────────────
 const SEED_FARMER: FarmerData = {
   totals: { meetings: 28, inProgress: 12, raised: 47, converted: 195000 },
-  rows: [
-    { id: "1", name: "Amanda Duarte", email: "amanda@psa.com", meetings: 8, inProgress: 4, raised: 15, converted: 62000 },
-    { id: "2", name: "João Backmann", email: "joao@psa.com", meetings: 7, inProgress: 3, raised: 14, converted: 58000 },
-    { id: "3", name: "Vitória Schaeffer", email: "vitoria@psa.com", meetings: 7, inProgress: 3, raised: 10, converted: 42000 },
-    { id: "4", name: "Willker Belous", email: "willker@psa.com", meetings: 6, inProgress: 2, raised: 8, converted: 33000 },
-  ],
+  rows: FARMER_SQUADS.flatMap((squad, si) =>
+    squad.members.map((email, i) => ({
+      id: `${si}-${i}`,
+      name: email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      email,
+      meetings:   Math.max(0, 8 - i - si),
+      inProgress: Math.max(0, 4 - i),
+      raised:     Math.max(0, 12 - i * 2 - si),
+      converted:  Math.max(0, (50000 - i * 8000 - si * 5000)),
+    }))
+  ),
 };

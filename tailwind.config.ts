@@ -9,8 +9,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        brand: {
+          orange: "#F97316",
+          "orange-dim": "#C2570E",
+          bg: "#0A0A0A",
+          surface: "#141414",
+          border: "#262626",
+          muted: "#525252",
+          text: "#E5E5E5",
+        },
+      },
+      fontFamily: {
+        sans: ["Archivo", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
       },
     },
   },

@@ -1,10 +1,9 @@
-import { hsPost } from "./client";
-import { ownerMap, ownerName } from "./owners";
+import { hsPost, hs } from "./client";
+import { B2C_TEAM } from "@/lib/teams";
 import type { ProfRow } from "@/components/ProfessionalTable";
 
-const PIPELINE_B2C = process.env.HUBSPOT_PIPELINE_B2C ?? "";
 const PROP_REVENUE = process.env.HUBSPOT_B2C_PROP_REVENUE ?? "amount";
-const PROP_PRODUCT = process.env.HUBSPOT_B2C_PROP_PRODUCT ?? "line_items";
+const PROP_PRODUCT = process.env.HUBSPOT_B2C_PROP_PRODUCT ?? "dealname";
 
 function monthRange() {
   const now = new Date();
@@ -17,91 +16,100 @@ export interface B2CData {
   rows: ProfRow[];
 }
 
+async function resolveOwnerIds(emails: string[]): Promise<Map<string, string>> {
+  // GET /crm/v3/owners returns all owners; match by email
+  const data = await hs<{ results: { id: string; email: string; firstName: string; lastName: string }[] }>(
+    "/crm/v3/owners?limit=200"
+  );
+  const map = new Map<string, string>(); // email → ownerId
+  for (const o of data.results) {
+    if (emails.includes(o.email)) map.set(o.email, o.id);
+  }
+  return map;
+}
+
 export async function getB2CData(): Promise<B2CData> {
-  if (!process.env.HUBSPOT_TOKEN || !PIPELINE_B2C) return SEED_B2C;
+  if (!process.env.HUBSPOT_TOKEN) return SEED_B2C;
+
+  const emails = B2C_TEAM.map((m) => m.email);
+  const emailToOwner = await resolveOwnerIds(emails);
 
   const { start, end } = monthRange();
-  const owners = await ownerMap();
 
-  const dealsRes = await hsPost<{ results: any[] }>(
-    "/crm/v3/objects/deals/search",
-    {
-      filterGroups: [
-        {
-          filters: [
-            { propertyName: "pipeline", operator: "EQ", value: PIPELINE_B2C },
-            { propertyName: "dealstage", operator: "EQ", value: "closedwon" },
-            { propertyName: "closedate", operator: "GTE", value: String(start) },
-            { propertyName: "closedate", operator: "LTE", value: String(end) },
-          ],
-        },
-      ],
-      properties: ["hubspot_owner_id", PROP_REVENUE, PROP_PRODUCT],
-      limit: 200,
+  // Build per-member rows
+  const rows: ProfRow[] = [];
+
+  for (const member of B2C_TEAM) {
+    const ownerId = emailToOwner.get(member.email);
+
+    const row: ProfRow = {
+      id: ownerId ?? member.email,
+      name: member.name,
+      email: member.email,
+      deals: 0,
+      revenue: 0,
+      meetings: 0,
+      products: [],
+    };
+
+    if (!ownerId) {
+      rows.push(row);
+      continue;
     }
-  );
 
-  const meetRes = await hsPost<{ results: any[] }>(
-    "/crm/v3/objects/meetings/search",
-    {
-      filterGroups: [
-        {
-          filters: [
-            { propertyName: "hs_meeting_outcome", operator: "EQ", value: "COMPLETED" },
-            { propertyName: "hs_timestamp", operator: "GTE", value: String(start) },
-            { propertyName: "hs_timestamp", operator: "LTE", value: String(end) },
-          ],
-        },
-      ],
-      properties: ["hubspot_owner_id"],
-      limit: 200,
+    // Closed-won deals this month
+    const dealsRes = await hsPost<{ results: { properties: Record<string, string> }[] }>(
+      "/crm/v3/objects/deals/search",
+      {
+        filterGroups: [
+          {
+            filters: [
+              { propertyName: "hubspot_owner_id", operator: "EQ", value: ownerId },
+              { propertyName: "dealstage", operator: "EQ", value: "closedwon" },
+              { propertyName: "closedate", operator: "GTE", value: String(start) },
+              { propertyName: "closedate", operator: "LTE", value: String(end) },
+            ],
+          },
+        ],
+        properties: [PROP_REVENUE, PROP_PRODUCT],
+        limit: 200,
+      }
+    );
+
+    const productSet = new Set<string>();
+    for (const d of dealsRes.results) {
+      row.deals = (row.deals ?? 0) + 1;
+      row.revenue = (row.revenue ?? 0) + Number(d.properties[PROP_REVENUE] ?? 0);
+      const prod = d.properties[PROP_PRODUCT];
+      if (prod) productSet.add(prod);
     }
-  );
+    row.products = Array.from(productSet);
 
-  const byOwner = new Map<string, ProfRow & { _products: Set<string> }>();
+    // Meetings this month
+    const meetRes = await hsPost<{ results: unknown[] }>(
+      "/crm/v3/objects/meetings/search",
+      {
+        filterGroups: [
+          {
+            filters: [
+              { propertyName: "hubspot_owner_id", operator: "EQ", value: ownerId },
+              { propertyName: "hs_timestamp", operator: "GTE", value: String(start) },
+              { propertyName: "hs_timestamp", operator: "LTE", value: String(end) },
+            ],
+          },
+        ],
+        properties: ["hs_meeting_outcome"],
+        limit: 200,
+      }
+    );
 
-  const ensure = (ownerId: string) => {
-    if (!byOwner.has(ownerId)) {
-      const o = owners.get(ownerId);
-      byOwner.set(ownerId, {
-        id: ownerId,
-        name: o ? ownerName(o) : `Owner ${ownerId}`,
-        email: o?.email ?? "",
-        meetings: 0,
-        deals: 0,
-        revenue: 0,
-        products: [],
-        _products: new Set(),
-      });
-    }
-    return byOwner.get(ownerId)!;
-  };
-
-  for (const d of dealsRes.results) {
-    const oid = d.properties.hubspot_owner_id;
-    if (!oid) continue;
-    const row = ensure(oid);
-    row.deals = (row.deals ?? 0) + 1;
-    row.revenue = (row.revenue ?? 0) + Number(d.properties[PROP_REVENUE] ?? 0);
-    const prod = d.properties[PROP_PRODUCT];
-    if (prod) row._products.add(prod);
+    row.meetings = meetRes.results.length;
+    rows.push(row);
   }
-
-  for (const m of meetRes.results) {
-    const oid = m.properties.hubspot_owner_id;
-    if (!oid) continue;
-    const row = ensure(oid);
-    row.meetings = (row.meetings ?? 0) + 1;
-  }
-
-  const allProducts = new Set<string>();
-  const rows: ProfRow[] = Array.from(byOwner.values()).map((r) => {
-    const prods = [...r._products];
-    prods.forEach((p) => allProducts.add(p));
-    return { ...r, products: prods };
-  });
 
   rows.sort((a, b) => (b.deals ?? 0) - (a.deals ?? 0));
+
+  const allProducts = new Set(rows.flatMap((r) => r.products ?? []));
 
   return {
     totals: {
@@ -116,9 +124,13 @@ export async function getB2CData(): Promise<B2CData> {
 
 const SEED_B2C: B2CData = {
   totals: { deals: 31, revenue: 156000, meetings: 54, products: 4 },
-  rows: [
-    { id: "1", name: "Juliana Costa", email: "juliana@psa.com", deals: 11, revenue: 55000, meetings: 19, products: ["Produto A", "Produto B"] },
-    { id: "2", name: "Fernanda Rocha", email: "fernanda@psa.com", deals: 10, revenue: 52000, meetings: 18, products: ["Produto A", "Produto C"] },
-    { id: "3", name: "Bruno Alves", email: "bruno@psa.com", deals: 10, revenue: 49000, meetings: 17, products: ["Produto B", "Produto D"] },
-  ],
+  rows: B2C_TEAM.map((m, i) => ({
+    id: String(i + 1),
+    name: m.name,
+    email: m.email,
+    deals: [11, 10, 5, 3, 1, 1][i] ?? 0,
+    revenue: [55000, 52000, 25000, 15000, 5000, 4000][i] ?? 0,
+    meetings: [19, 18, 8, 5, 2, 2][i] ?? 0,
+    products: [],
+  })),
 };

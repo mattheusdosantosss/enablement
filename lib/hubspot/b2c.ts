@@ -18,7 +18,7 @@ export interface B2CData {
 }
 
 export async function getB2CData(): Promise<B2CData> {
-  if (!process.env.HUBSPOT_TOKEN) return SEED_B2C;
+  if (!process.env.HUBSPOT_TOKEN || !PIPELINE_B2C) return SEED_B2C;
 
   const { start, end } = monthRange();
   const owners = await ownerMap();

@@ -21,7 +21,7 @@ export interface FarmerData {
 }
 
 export async function getFarmerData(): Promise<FarmerData> {
-  if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
+  if (!process.env.HUBSPOT_TOKEN || !PIPELINE_FARMER) return SEED_FARMER;
 
   const { start, end } = monthRange();
   const owners = await ownerMap();

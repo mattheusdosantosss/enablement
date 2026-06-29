@@ -1,5 +1,5 @@
 import KpiCard from "@/components/KpiCard";
-import ProfessionalTable from "@/components/ProfessionalTable";
+import FarmerTable from "@/components/FarmerTable";
 import { getFarmerData } from "@/lib/hubspot/farmer";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export default async function FarmerPage() {
         />
       </div>
 
-      <ProfessionalTable rows={data.rows} vertical="farmer" />
+      <FarmerTable squads={data.squads} />
     </div>
   );
 }

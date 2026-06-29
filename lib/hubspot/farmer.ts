@@ -1,6 +1,7 @@
 import { hs, hsPost } from "./client";
 import { FARMER_SQUADS, ALL_FARMER_EMAILS } from "@/lib/teams";
 import type { ProfRow } from "@/components/ProfessionalTable";
+import type { FarmerSquadGroup } from "@/components/FarmerTable";
 
 // Mesmos stage IDs do psa-farmer
 const STAGE_GANHO_CONTRATO   = process.env.HUBSPOT_STAGE_GANHO_CONTRATO   || "1076664460";
@@ -30,6 +31,7 @@ const brtEnd   = (d: string) => new Date(d).getTime() + BR_OFFSET_MS + 86_400_00
 export interface FarmerData {
   totals: { meetings: number; inProgress: number; raised: number; converted: number };
   rows: ProfRow[];
+  squads: FarmerSquadGroup[];
 }
 
 // ── Resolve emails → ownerIds ─────────────────────────────────────────────────
@@ -183,13 +185,22 @@ export async function getFarmerData(): Promise<FarmerData> {
     fetchMeetings(allOwnerIds, from, to),
   ]);
 
-  // ── Agregar por farmer ───────────────────────────────────────────────────────
-  const rows: ProfRow[] = FARMER_SQUADS.flatMap((squad) =>
-    squad.members.map((email) => {
+  // Resolve nomes via owners
+  const ownersData = await hs<{ results: { id: string; firstName: string; lastName: string; email: string }[] }>(
+    "/crm/v3/owners?limit=200"
+  );
+  const ownerById = new Map(ownersData.results.map((o) => [o.id, o]));
+
+  // ── Agregar por squad ────────────────────────────────────────────────────────
+  const squadGroups: FarmerSquadGroup[] = FARMER_SQUADS.map((squad) => {
+    const rows: ProfRow[] = squad.members.map((email) => {
       const ownerId = emailToOwner.get(email);
+      const owner = ownerId ? ownerById.get(ownerId) : undefined;
       const row: ProfRow = {
         id: ownerId ?? email,
-        name: email, // será sobrescrito abaixo se owner encontrado
+        name: owner
+          ? (`${owner.firstName ?? ""} ${owner.lastName ?? ""}`.trim() || owner.email)
+          : email,
         email,
         meetings: 0,
         inProgress: 0,
@@ -218,44 +229,43 @@ export async function getFarmerData(): Promise<FarmerData> {
       ).length;
 
       return row;
-    })
-  );
+    });
 
-  // Resolve nomes via owners (já buscados)
-  const ownersData = await hs<{ results: { id: string; firstName: string; lastName: string; email: string }[] }>(
-    "/crm/v3/owners?limit=200"
-  );
-  const ownerById = new Map(ownersData.results.map((o) => [o.id, o]));
-  for (const row of rows) {
-    const o = ownerById.get(row.id);
-    if (o) row.name = `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim() || o.email;
-  }
+    rows.sort((a, b) => (b.raised ?? 0) - (a.raised ?? 0));
+    return { id: squad.id, label: squad.label, rows };
+  });
 
-  rows.sort((a, b) => (b.raised ?? 0) - (a.raised ?? 0));
+  const allRows = squadGroups.flatMap((s) => s.rows);
 
   return {
     totals: {
-      meetings:   rows.reduce((s, r) => s + (r.meetings ?? 0), 0),
-      inProgress: rows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
-      raised:     rows.reduce((s, r) => s + (r.raised ?? 0), 0),
-      converted:  rows.reduce((s, r) => s + (r.converted ?? 0), 0),
+      meetings:   allRows.reduce((s, r) => s + (r.meetings ?? 0), 0),
+      inProgress: allRows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
+      raised:     allRows.reduce((s, r) => s + (r.raised ?? 0), 0),
+      converted:  allRows.reduce((s, r) => s + (r.converted ?? 0), 0),
     },
-    rows,
+    rows: allRows,
+    squads: squadGroups,
   };
 }
 
 // ── Seed ───────────────────────────────────────────────────────────────────────
+const SEED_SQUADS: FarmerSquadGroup[] = FARMER_SQUADS.map((squad, si) => ({
+  id: squad.id,
+  label: squad.label,
+  rows: squad.members.map((email, i) => ({
+    id: `${si}-${i}`,
+    name: email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    email,
+    meetings:   Math.max(0, 8 - i - si),
+    inProgress: Math.max(0, 4 - i),
+    raised:     Math.max(0, 12 - i * 2 - si),
+    converted:  Math.max(0, 50000 - i * 8000 - si * 5000),
+  })),
+}));
+
 const SEED_FARMER: FarmerData = {
   totals: { meetings: 28, inProgress: 12, raised: 47, converted: 195000 },
-  rows: FARMER_SQUADS.flatMap((squad, si) =>
-    squad.members.map((email, i) => ({
-      id: `${si}-${i}`,
-      name: email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      email,
-      meetings:   Math.max(0, 8 - i - si),
-      inProgress: Math.max(0, 4 - i),
-      raised:     Math.max(0, 12 - i * 2 - si),
-      converted:  Math.max(0, (50000 - i * 8000 - si * 5000)),
-    }))
-  ),
+  rows: SEED_SQUADS.flatMap((s) => s.rows),
+  squads: SEED_SQUADS,
 };

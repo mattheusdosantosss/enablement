@@ -2,7 +2,7 @@ import KpiCard from "@/components/KpiCard";
 import ProfessionalTable from "@/components/ProfessionalTable";
 import { getFarmerData } from "@/lib/hubspot/farmer";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function FarmerPage() {
   const data = await getFarmerData();

@@ -2,7 +2,7 @@ import KpiCard from "@/components/KpiCard";
 import ProfessionalTable from "@/components/ProfessionalTable";
 import { getB2BData } from "@/lib/hubspot/b2b";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function B2BPage() {
   const data = await getB2BData();

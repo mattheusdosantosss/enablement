@@ -17,8 +17,10 @@ export const B2C_LEADER: TeamMember = {
   email: "nicollas.lenuzza@profissionaissa.com",
 };
 
-// B2B — a preencher após coletar membros
-export const B2B_TEAM: TeamMember[] = [];
+// B2B — adicionar membros quando informados
+export const B2B_TEAM: TeamMember[] = [
+  // Membros serão adicionados quando fornecidos
+];
 
 // ── Farmers ──────────────────────────────────────────────────────────────────
 

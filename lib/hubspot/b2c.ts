@@ -101,7 +101,7 @@ export async function getB2CData(): Promise<B2CData> {
         properties: ["hs_meeting_outcome"],
         limit: 200,
       }
-    );
+    ).catch(() => ({ results: [] }));
 
     row.meetings = meetRes.results.length;
     rows.push(row);

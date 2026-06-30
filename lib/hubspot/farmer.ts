@@ -171,7 +171,7 @@ export async function getFarmerData(): Promise<FarmerData> {
   const { from, to } = monthRange();
 
   const [emailToOwner, csStages] = await Promise.all([
-    resolveOwnerIds(),
+    resolveOwnerIds().catch(() => new Map<string, string>()),
     resolveCsStages(),
   ]);
 
@@ -179,10 +179,10 @@ export async function getFarmerData(): Promise<FarmerData> {
   if (!allOwnerIds.length) return SEED_FARMER;
 
   const [raised, converted, tickets, meetings] = await Promise.all([
-    fetchRaisedDeals(allOwnerIds, from, to),
-    fetchConvertedDeals(allOwnerIds, from, to),
-    fetchCsInProgress(allOwnerIds, csStages.abertos),
-    fetchMeetings(allOwnerIds, from, to),
+    fetchRaisedDeals(allOwnerIds, from, to).catch(() => []),
+    fetchConvertedDeals(allOwnerIds, from, to).catch(() => []),
+    fetchCsInProgress(allOwnerIds, csStages.abertos).catch(() => []),
+    fetchMeetings(allOwnerIds, from, to).catch(() => []),
   ]);
 
   // Resolve nomes via owners

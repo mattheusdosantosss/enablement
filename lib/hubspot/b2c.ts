@@ -1,4 +1,5 @@
 import { hsPost, hs } from "./client";
+import { getTeamConfig } from "@/lib/config";
 import { B2C_TEAM } from "@/lib/teams";
 import type { ProfRow } from "@/components/ProfessionalTable";
 
@@ -31,6 +32,7 @@ async function resolveOwnerIds(emails: string[]): Promise<Map<string, string>> {
 export async function getB2CData(): Promise<B2CData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_B2C;
 
+  const { b2c: B2C_TEAM } = await getTeamConfig();
   const emails = B2C_TEAM.map((m) => m.email);
   const emailToOwner = await resolveOwnerIds(emails);
 

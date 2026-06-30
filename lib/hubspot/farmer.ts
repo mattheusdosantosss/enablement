@@ -1,5 +1,6 @@
 import { hs, hsPost } from "./client";
-import { FARMER_SQUADS, ALL_FARMER_EMAILS } from "@/lib/teams";
+import { getTeamConfig } from "@/lib/config";
+import { FARMER_SQUADS as STATIC_FARMER_SQUADS } from "@/lib/teams";
 import type { ProfRow } from "@/components/ProfessionalTable";
 import type { FarmerSquadGroup } from "@/components/FarmerTable";
 
@@ -35,14 +36,14 @@ export interface FarmerData {
 }
 
 // ── Resolve emails → ownerIds ─────────────────────────────────────────────────
-async function resolveOwnerIds(): Promise<Map<string, string>> {
+async function resolveOwnerIds(allEmails: Set<string>): Promise<Map<string, string>> {
   const data = await hs<{ results: { id: string; email: string }[] }>(
     "/crm/v3/owners?limit=200"
   );
   const map = new Map<string, string>(); // email → ownerId
   for (const o of data.results) {
     const email = (o.email ?? "").toLowerCase();
-    if (ALL_FARMER_EMAILS.has(email)) map.set(email, o.id);
+    if (allEmails.has(email)) map.set(email, o.id);
   }
   return map;
 }
@@ -168,10 +169,13 @@ async function fetchMeetings(ownerIds: string[], from: string, to: string) {
 export async function getFarmerData(): Promise<FarmerData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
 
+  const { farmerSquads: FARMER_SQUADS } = await getTeamConfig();
+  const ALL_FARMER_EMAILS = new Set(FARMER_SQUADS.flatMap((s) => s.members.map((m) => m.email.toLowerCase())));
+
   const { from, to } = monthRange();
 
   const [emailToOwner, csStages] = await Promise.all([
-    resolveOwnerIds().catch(() => new Map<string, string>()),
+    resolveOwnerIds(ALL_FARMER_EMAILS).catch(() => new Map<string, string>()),
     resolveCsStages(),
   ]);
 
@@ -193,7 +197,8 @@ export async function getFarmerData(): Promise<FarmerData> {
 
   // ── Agregar por squad ────────────────────────────────────────────────────────
   const squadGroups: FarmerSquadGroup[] = FARMER_SQUADS.map((squad) => {
-    const rows: ProfRow[] = squad.members.map((email) => {
+    const rows: ProfRow[] = squad.members.map((m) => {
+      const email = (m as { email: string }).email ?? String(m);
       const ownerId = emailToOwner.get(email);
       const owner = ownerId ? ownerById.get(ownerId) : undefined;
       const row: ProfRow = {
@@ -250,7 +255,7 @@ export async function getFarmerData(): Promise<FarmerData> {
 }
 
 // ── Seed ───────────────────────────────────────────────────────────────────────
-const SEED_SQUADS: FarmerSquadGroup[] = FARMER_SQUADS.map((squad, si) => ({
+const SEED_SQUADS: FarmerSquadGroup[] = STATIC_FARMER_SQUADS.map((squad, si) => ({
   id: squad.id,
   label: squad.label,
   rows: squad.members.map((email, i) => ({

@@ -6,7 +6,8 @@ export const COOKIE = "ena_session";
 const MAX_AGE = 7 * 24 * 60 * 60;
 
 const USERS = [
-  { email: "crm.psa@profissionaissa.com", role: "admin" as const, hashEnv: "AUTH_HASH" },
+  { email: "crm.psa@profissionaissa.com",          role: "admin" as const, hashEnv: "AUTH_HASH" },
+  { email: "diego.conceicao@profissionaissa.com",   role: "admin" as const, hashEnv: "AUTH_DIEGO_HASH" },
 ];
 
 function secret() { return process.env.AUTH_SECRET || ""; }

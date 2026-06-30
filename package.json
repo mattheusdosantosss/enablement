@@ -15,7 +15,8 @@
     "nodemailer": "^9.0.3",
     "react": "^18",
     "react-dom": "^18",
-    "recharts": "^3.9.1"
+    "recharts": "^3.9.1",
+    "resend": "^6.16.0"
   },
   "devDependencies": {
     "@types/node": "^20",

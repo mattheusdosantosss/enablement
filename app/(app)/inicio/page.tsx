@@ -1,7 +1,9 @@
-import TeamBarChart from "@/components/TeamBarChart";
+import dynamic from "next/dynamic";
 import { getB2BData } from "@/lib/hubspot/b2b";
 import { getB2CData } from "@/lib/hubspot/b2c";
 import { getFarmerData } from "@/lib/hubspot/farmer";
+
+const TeamBarChart = dynamic(() => import("@/components/TeamBarChart"), { ssr: false });
 
 export const dynamic = "force-dynamic";
 

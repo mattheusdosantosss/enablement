@@ -2,8 +2,15 @@ import { redirect } from "next/navigation";
 import { sessaoAtual } from "@/lib/auth";
 import Sidebar from "@/components/Sidebar";
 
+export const dynamic = "force-dynamic";
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = sessaoAtual();
+  let user;
+  try {
+    user = sessaoAtual();
+  } catch {
+    user = null;
+  }
   if (!user) redirect("/login");
 
   return (

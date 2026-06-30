@@ -24,10 +24,18 @@ function SectionHeader({ title, sub }: { title: string; sub: string }) {
 
 export default async function EquipesPage() {
   const [b2b, b2c, farmer] = await Promise.all([
-    getB2BData(),
-    getB2CData(),
-    getFarmerData(),
+    getB2BData().catch(() => null),
+    getB2CData().catch(() => null),
+    getFarmerData().catch(() => null),
   ]);
+
+  if (!b2b || !b2c || !farmer) {
+    return (
+      <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)" }}>
+        <p style={{ fontSize: 14 }}>Não foi possível carregar os dados. Verifique o token HubSpot.</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>

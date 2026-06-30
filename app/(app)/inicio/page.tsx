@@ -11,10 +11,18 @@ function fmtBrl(v: number) {
 
 export default async function InicioPage() {
   const [b2b, b2c, farmer] = await Promise.all([
-    getB2BData(),
-    getB2CData(),
-    getFarmerData(),
+    getB2BData().catch(() => null),
+    getB2CData().catch(() => null),
+    getFarmerData().catch(() => null),
   ]);
+
+  if (!b2b || !b2c || !farmer) {
+    return (
+      <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)" }}>
+        <p style={{ fontSize: 14 }}>Não foi possível carregar os dados. Verifique o token HubSpot.</p>
+      </div>
+    );
+  }
 
   const b2bChart = b2b.rows.map((r) => ({ name: r.name, value: r.deals ?? 0 }));
   const b2cChart = b2c.rows.map((r) => ({ name: r.name, value: r.revenue ?? 0 }));

@@ -12,7 +12,7 @@ interface TeamBarChartProps {
   subtitle?: string;
   data: BarEntry[];
   color: string;
-  formatValue?: (v: number) => string;
+  format?: "brl" | "number";
   metric: string;
 }
 
@@ -22,8 +22,10 @@ function shortName(name: string) {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
-export default function TeamBarChart({ title, subtitle, data, color, formatValue, metric }: TeamBarChartProps) {
-  const fmt = formatValue ?? ((v: number) => String(v));
+export default function TeamBarChart({ title, subtitle, data, color, format, metric }: TeamBarChartProps) {
+  const fmt = format === "brl"
+    ? (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`
+    : (v: number) => String(v);
   const sorted = [...data].sort((a, b) => b.value - a.value);
   const max = Math.max(...sorted.map((d) => d.value), 1);
 

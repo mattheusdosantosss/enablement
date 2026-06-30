@@ -7,10 +7,6 @@ const TeamBarChart = dynamic(() => import("@/components/TeamBarChart"), { ssr: f
 
 export const dynamic = "force-dynamic";
 
-function fmtBrl(v: number) {
-  return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`;
-}
-
 export default async function InicioPage() {
   const [b2b, b2c, farmer] = await Promise.all([
     getB2BData().catch(() => null),
@@ -55,7 +51,7 @@ export default async function InicioPage() {
           subtitle="Receita líquida por closer"
           data={b2cChart}
           color="var(--blue)"
-          formatValue={fmtBrl}
+          format="brl"
           metric="Receita líquida"
         />
 

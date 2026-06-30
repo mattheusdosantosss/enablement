@@ -18,16 +18,75 @@ const TABS = [
   { key: "farmers", label: "Farmers"     },
 ];
 
+const SQUAD_TABS = [
+  { key: "todos",    label: "Todos os Squads" },
+  { key: "dani",     label: "Squad Dani"      },
+  { key: "katyeli",  label: "Squad Katyeli"   },
+  { key: "leticia",  label: "Squad Leticia"   },
+];
+
+function TabBar({ tabs, activeKey, buildHref }: {
+  tabs: { key: string; label: string }[];
+  activeKey: string;
+  buildHref: (key: string) => string;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 6, borderBottom: "1px solid var(--border-soft)", marginBottom: 24 }}>
+      {tabs.map((tab) => {
+        const active = tab.key === activeKey;
+        return (
+          <Link
+            key={tab.key}
+            href={buildHref(tab.key)}
+            style={{
+              display: "inline-block",
+              padding: "9px 20px",
+              fontFamily: "var(--font-psa), var(--font-sans)",
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              textDecoration: "none",
+              borderRadius: "10px 10px 0 0",
+              color: active ? "var(--accent)" : "var(--muted)",
+              background: active ? "var(--accent-soft)" : "transparent",
+              borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+              transition: "all .15s",
+            }}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 export default async function EquipesPage({
   searchParams,
 }: {
-  searchParams: { time?: string };
+  searchParams: { time?: string; squad?: string };
 }) {
-  const time = (searchParams.time ?? "b2b") as "b2b" | "b2c" | "farmers";
+  const time  = (searchParams.time  ?? "b2b")   as "b2b" | "b2c" | "farmers";
+  const squad = (searchParams.squad ?? "todos");
 
-  const b2b     = time === "b2b"     ? await getB2BData().catch(() => null)     : null;
-  const b2c     = time === "b2c"     ? await getB2CData().catch(() => null)     : null;
-  const farmer  = time === "farmers" ? await getFarmerData().catch(() => null)  : null;
+  const b2b    = time === "b2b"     ? await getB2BData().catch(() => null)    : null;
+  const b2c    = time === "b2c"     ? await getB2CData().catch(() => null)    : null;
+  const farmer = time === "farmers" ? await getFarmerData().catch(() => null) : null;
+
+  // Filtra squads se selecionado
+  const visibleSquads = farmer
+    ? (squad === "todos" ? farmer.squads : farmer.squads.filter((s) => s.id === squad))
+    : [];
+
+  const squadTotals = visibleSquads.length
+    ? {
+        meetings:   visibleSquads.flatMap((s) => s.rows).reduce((a, r) => a + (r.meetings   ?? 0), 0),
+        inProgress: visibleSquads.flatMap((s) => s.rows).reduce((a, r) => a + (r.inProgress ?? 0), 0),
+        raised:     visibleSquads.flatMap((s) => s.rows).reduce((a, r) => a + (r.raised     ?? 0), 0),
+        converted:  visibleSquads.flatMap((s) => s.rows).reduce((a, r) => a + (r.converted  ?? 0), 0),
+      }
+    : farmer?.totals ?? { meetings: 0, inProgress: 0, raised: 0, converted: 0 };
 
   return (
     <div>
@@ -41,35 +100,12 @@ export default async function EquipesPage({
         </p>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 32, borderBottom: "1px solid var(--border-soft)", paddingBottom: 0 }}>
-        {TABS.map((tab) => {
-          const active = tab.key === time;
-          return (
-            <Link
-              key={tab.key}
-              href={`/equipes?time=${tab.key}`}
-              style={{
-                display: "inline-block",
-                padding: "9px 20px",
-                fontFamily: "var(--font-psa), var(--font-sans)",
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                textDecoration: "none",
-                borderRadius: "10px 10px 0 0",
-                color: active ? "var(--accent)" : "var(--muted)",
-                background: active ? "var(--accent-soft)" : "transparent",
-                borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
-                transition: "all .15s",
-              }}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </div>
+      {/* Tabs primárias — times */}
+      <TabBar
+        tabs={TABS}
+        activeKey={time}
+        buildHref={(key) => `/equipes?time=${key}`}
+      />
 
       {/* B2B */}
       {time === "b2b" && (
@@ -105,13 +141,22 @@ export default async function EquipesPage({
       {time === "farmers" && (
         farmer ? (
           <>
+            {/* Tabs secundárias — squads */}
+            <TabBar
+              tabs={SQUAD_TABS}
+              activeKey={squad}
+              buildHref={(key) => `/equipes?time=farmers&squad=${key}`}
+            />
+
+            {/* KPIs do squad selecionado */}
             <div className="kpis" style={{ marginBottom: 18 }}>
-              <KpiCard label="Reuniões agendadas"     value={farmer.totals.meetings} />
-              <KpiCard label="Em tramitação"          value={farmer.totals.inProgress} />
-              <KpiCard label="Demandas levantadas"    value={farmer.totals.raised} />
-              <KpiCard label="Convertidas em vendas"  value={fmt(farmer.totals.converted)} lead />
+              <KpiCard label="Reuniões agendadas"    value={squadTotals.meetings} />
+              <KpiCard label="Em tramitação"         value={squadTotals.inProgress} />
+              <KpiCard label="Demandas levantadas"   value={squadTotals.raised} />
+              <KpiCard label="Convertidas em vendas" value={fmt(squadTotals.converted)} lead />
             </div>
-            <FarmerTable squads={farmer.squads} />
+
+            <FarmerTable squads={visibleSquads} />
           </>
         ) : <p style={{ color: "var(--muted)", fontSize: 13 }}>Não foi possível carregar os dados.</p>
       )}

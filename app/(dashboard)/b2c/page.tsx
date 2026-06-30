@@ -6,25 +6,16 @@ export const dynamic = "force-dynamic";
 
 export default async function B2CPage() {
   const data = await getB2CData();
+  const revenue = `R$ ${data.totals.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-bold text-brand-text">Closers B2C</h1>
-        <p className="text-sm text-brand-muted mt-0.5">Performance do time — mês atual</p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Vendas no mês" value={data.totals.deals} />
-        <KpiCard
-          label="Receita líquida"
-          value={`R$ ${data.totals.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`}
-          highlight
-        />
-        <KpiCard label="Reuniões" value={data.totals.meetings} />
+    <div>
+      <div className="kpis">
+        <KpiCard label="Vendas no mês"   value={data.totals.deals} />
+        <KpiCard label="Receita líquida" value={revenue} lead />
+        <KpiCard label="Reuniões"        value={data.totals.meetings} />
         <KpiCard label="Produtos vendidos" value={data.totals.products} sub="tipos únicos" />
       </div>
-
       <ProfessionalTable rows={data.rows} vertical="b2c" />
     </div>
   );

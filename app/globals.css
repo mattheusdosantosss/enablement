@@ -52,7 +52,7 @@ body {
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand .logo { width: 34px; height: 34px; display: flex; align-items: flex-end; gap: 2px; }
 .brand .logo span { flex: 1; background: var(--accent); border-radius: 1px; }
-.brand h1 { font-size: 17px; font-weight: 800; letter-spacing: 0.06em; margin: 0; text-transform: uppercase; }
+.brand h1 { font-size: 17px; font-weight: 800; letter-spacing: 0.06em; margin: 0; text-transform: uppercase; font-family: var(--font-psa), var(--font-sans), sans-serif; }
 .brand h1 b { color: var(--accent); }
 .brand .sub { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: 0.02em; }
 .pill {
@@ -66,7 +66,7 @@ body {
 /* ---------- nav tabs ---------- */
 .nav-tabs { display: flex; gap: 4px; padding: 0 0 20px; }
 .nav-tab {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-family: var(--font-psa), var(--font-sans), sans-serif;
   padding: 8px 18px; border-radius: 10px; text-decoration: none; color: var(--muted);
   transition: background 0.15s, color 0.15s; border: 1px solid transparent;
 }
@@ -81,14 +81,14 @@ body {
 .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 16px 14px; box-shadow: var(--shadow); }
 .kpi.lead { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: linear-gradient(180deg, var(--accent-soft), transparent 60%), var(--panel); }
 .kpi .lab { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-.kpi .num { font-family: var(--font-mono), monospace; font-size: 32px; font-weight: 700; line-height: 1.05; margin: 8px 0 4px; letter-spacing: -0.01em; }
+.kpi .num { font-family: var(--font-psa), var(--font-mono), monospace; font-size: 32px; font-weight: 700; line-height: 1.05; margin: 8px 0 4px; letter-spacing: -0.01em; }
 .kpi.lead .num { color: var(--accent); }
 .kpi .cap { font-size: 11px; color: var(--faint); }
 
 /* ---------- section card ---------- */
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px 22px; margin-bottom: 18px; box-shadow: var(--shadow); }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-.card-head .title { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; position: relative; padding-top: 8px; }
+.card-head .title { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; position: relative; padding-top: 8px; font-family: var(--font-psa), var(--font-sans), sans-serif; }
 .card-head .title::before { content: ""; position: absolute; top: 0; left: 0; width: 26px; height: 2px; background: var(--accent); }
 .card-head .cap { font-size: 11px; color: var(--muted); margin-top: 5px; font-weight: 400; letter-spacing: 0; }
 
@@ -145,6 +145,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   background: var(--panel-2); border: none; border-top: 2px solid var(--border);
   color: var(--text); padding: 11px 13px; cursor: pointer; font: inherit;
   font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  font-family: var(--font-psa), var(--font-sans), sans-serif;
 }
 .squad-collapse-btn:first-child { border-top: 1px solid var(--border-soft); }
 .squad-collapse-btn:hover { background: var(--panel-3); }

@@ -1,11 +1,11 @@
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { getB2BData } from "@/lib/hubspot/b2b";
 import { getB2CData } from "@/lib/hubspot/b2c";
 import { getFarmerData } from "@/lib/hubspot/farmer";
 
-const TeamBarChart = dynamic(() => import("@/components/TeamBarChart"), { ssr: false });
-
 export const dynamic = "force-dynamic";
+
+const TeamBarChart = nextDynamic(() => import("@/components/TeamBarChart"), { ssr: false });
 
 export default async function InicioPage() {
   const [b2b, b2c, farmer] = await Promise.all([

@@ -180,7 +180,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .nav-link:hover { color: var(--text); background: var(--panel-2); }
 .nav-link.active { color: var(--accent); background: var(--accent-soft); font-weight: 700; }
 
-.app-main { margin-left: 224px; flex: 1; padding: 36px 36px 80px; max-width: 1260px; }
+.app-main { margin-left: 224px; flex: 1; padding: 36px 48px 80px; min-width: 0; overflow-x: hidden; }
 
 /* Login overrides */
 .loginwrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }

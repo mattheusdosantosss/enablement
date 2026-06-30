@@ -7,6 +7,20 @@ export const dynamic = "force-dynamic";
 
 const TeamBarChart = nextDynamic(() => import("@/components/TeamBarChart"), { ssr: false });
 
+function EmptyChart({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div>
+          <div className="title">{title}</div>
+          <div className="cap">{subtitle}</div>
+        </div>
+      </div>
+      <div className="empty">Sem dados disponíveis</div>
+    </div>
+  );
+}
+
 export default async function InicioPage() {
   const [b2b, b2c, farmer] = await Promise.all([
     getB2BData().catch(() => null),
@@ -14,17 +28,9 @@ export default async function InicioPage() {
     getFarmerData().catch(() => null),
   ]);
 
-  if (!b2b || !b2c || !farmer) {
-    return (
-      <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)" }}>
-        <p style={{ fontSize: 14 }}>Não foi possível carregar os dados. Verifique o token HubSpot.</p>
-      </div>
-    );
-  }
-
-  const b2bChart = b2b.rows.map((r) => ({ name: r.name, value: r.deals ?? 0 }));
-  const b2cChart = b2c.rows.map((r) => ({ name: r.name, value: r.revenue ?? 0 }));
-  const farmerChart = farmer.rows.map((r) => ({ name: r.name, value: r.raised ?? 0 }));
+  const b2bChart  = b2b     ? b2b.rows.map((r)     => ({ name: r.name, value: r.deals ?? 0 }))  : null;
+  const b2cChart  = b2c     ? b2c.rows.map((r)     => ({ name: r.name, value: r.revenue ?? 0 })) : null;
+  const farmChart = farmer  ? farmer.rows.map((r)  => ({ name: r.name, value: r.raised ?? 0 }))  : null;
 
   return (
     <div>
@@ -38,30 +44,36 @@ export default async function InicioPage() {
       </div>
 
       <div style={{ display: "grid", gap: 18 }}>
-        <TeamBarChart
-          title="Time B2B"
-          subtitle="Vendas fechadas por closer"
-          data={b2bChart}
-          color="var(--accent)"
-          metric="Vendas"
-        />
+        {b2bChart ? (
+          <TeamBarChart
+            title="Time B2B"
+            subtitle="Vendas fechadas por closer"
+            data={b2bChart}
+            color="var(--accent)"
+            metric="Vendas"
+          />
+        ) : <EmptyChart title="Time B2B" subtitle="Vendas fechadas por closer" />}
 
-        <TeamBarChart
-          title="Time B2C"
-          subtitle="Receita líquida por closer"
-          data={b2cChart}
-          color="var(--blue)"
-          format="brl"
-          metric="Receita líquida"
-        />
+        {b2cChart ? (
+          <TeamBarChart
+            title="Time B2C"
+            subtitle="Receita líquida por closer"
+            data={b2cChart}
+            color="var(--blue)"
+            format="brl"
+            metric="Receita líquida"
+          />
+        ) : <EmptyChart title="Time B2C" subtitle="Receita líquida por closer" />}
 
-        <TeamBarChart
-          title="Farmers"
-          subtitle="Demandas levantadas por farmer"
-          data={farmerChart}
-          color="var(--green)"
-          metric="Demandas levantadas"
-        />
+        {farmChart ? (
+          <TeamBarChart
+            title="Farmers"
+            subtitle="Demandas levantadas por farmer"
+            data={farmChart}
+            color="var(--green)"
+            metric="Demandas levantadas"
+          />
+        ) : <EmptyChart title="Farmers" subtitle="Demandas levantadas por farmer" />}
       </div>
     </div>
   );

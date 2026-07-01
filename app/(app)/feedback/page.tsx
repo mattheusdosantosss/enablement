@@ -17,16 +17,22 @@ const TEAMS = [
   },
 ];
 
+const CARGA_OPTIONS = ["20h", "30h", "40h", "Outro"];
+const GESTAO_OPTIONS = ["Líder Tático", "Coordenador", "Gerente", "Diretor"];
+
 type Status = "idle" | "sending" | "ok" | "error";
 
 export default function FeedbackPage() {
-  const [team, setTeam] = useState("");
-  const [memberEmail, setMemberEmail] = useState("");
-  const [text, setText] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [errMsg, setErrMsg] = useState("");
+  const [team,       setTeam]       = useState("");
+  const [memberEmail,setMemberEmail]= useState("");
+  const [carga,      setCarga]      = useState("");
+  const [gestao,     setGestao]     = useState("");
+  const [objetivo,   setObjetivo]   = useState("");
+  const [text,       setText]       = useState("");
+  const [status,     setStatus]     = useState<Status>("idle");
+  const [errMsg,     setErrMsg]     = useState("");
 
-  const selectedTeam = TEAMS.find((t) => t.value === team);
+  const selectedTeam   = TEAMS.find((t) => t.value === team);
   const selectedMember = selectedTeam?.members.find((m) => m.email === memberEmail);
 
   async function enviar(e: React.FormEvent) {
@@ -40,23 +46,24 @@ export default function FeedbackPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           team,
-          memberName: selectedMember?.name ?? memberEmail,
+          memberName:  selectedMember?.name ?? memberEmail,
           memberEmail,
+          carga,
+          gestao,
+          objetivo,
           text,
         }),
       });
       if (res.ok) {
         setStatus("ok");
-        setTeam("");
-        setMemberEmail("");
-        setText("");
+        setTeam(""); setMemberEmail(""); setCarga(""); setGestao(""); setObjetivo(""); setText("");
       } else {
         const d = await res.json().catch(() => ({}));
         setErrMsg(d.error || "Erro ao enviar.");
         setStatus("error");
       }
     } catch {
-      setErrMsg("Falha de conexão.");
+      setErrMsg("Falha de conexao.");
       setStatus("error");
     }
   }
@@ -68,80 +75,122 @@ export default function FeedbackPage() {
           Feedback
         </h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Escreva um feedback para qualquer membro do time comercial. O gestor do setor será notificado por e-mail.
+          Escreva um feedback para qualquer membro do time comercial. O gestor do setor sera notificado por e-mail.
         </p>
       </div>
 
-      <div style={{ maxWidth: 640 }}>
+      <div style={{ maxWidth: 680 }}>
         <form className="card" onSubmit={enviar} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div className="card-head" style={{ marginBottom: 0 }}>
             <div>
               <div className="title">Novo Feedback</div>
-              <div className="cap">Selecione o time e o membro antes de escrever</div>
+              <div className="cap">Preencha todos os campos antes de enviar</div>
             </div>
           </div>
 
-          {/* Time */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label className="flab">Time</label>
-            <select
-              className="finp"
-              value={team}
-              onChange={(e) => { setTeam(e.target.value); setMemberEmail(""); }}
-              required
-            >
-              <option value="">Selecione o time…</option>
-              {TEAMS.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
+          {/* Time + Membro lado a lado */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="flab">Time</label>
+              <select
+                className="finp"
+                value={team}
+                onChange={(e) => { setTeam(e.target.value); setMemberEmail(""); }}
+                required
+              >
+                <option value="">Selecione o time...</option>
+                {TEAMS.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="flab">Membro</label>
+              <select
+                className="finp"
+                value={memberEmail}
+                onChange={(e) => setMemberEmail(e.target.value)}
+                required
+                disabled={!team}
+              >
+                <option value="">Selecione o membro...</option>
+                {selectedTeam?.members.map((m) => (
+                  <option key={m.email} value={m.email}>{m.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Membro */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label className="flab">Membro</label>
-            <select
-              className="finp"
-              value={memberEmail}
-              onChange={(e) => setMemberEmail(e.target.value)}
-              required
-              disabled={!team}
-            >
-              <option value="">Selecione o membro…</option>
-              {selectedTeam?.members.map((m) => (
-                <option key={m.email} value={m.email}>{m.name}</option>
-              ))}
-            </select>
+          {/* Carga Horaria + Gestao lado a lado */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="flab">Carga Horaria</label>
+              <select
+                className="finp"
+                value={carga}
+                onChange={(e) => setCarga(e.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {CARGA_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="flab">Gestao</label>
+              <select
+                className="finp"
+                value={gestao}
+                onChange={(e) => setGestao(e.target.value)}
+              >
+                <option value="">Selecione...</option>
+                {GESTAO_OPTIONS.map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Texto */}
+          {/* Objetivo do Treinamento */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label className="flab">Objetivo do Treinamento</label>
+            <input
+              className="finp"
+              value={objetivo}
+              onChange={(e) => setObjetivo(e.target.value)}
+              placeholder="Descreva o objetivo do treinamento realizado..."
+              style={{ fontSize: 13 }}
+            />
+          </div>
+
+          {/* Feedback */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label className="flab">Feedback</label>
             <textarea
               className="finp"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Descreva o feedback de forma objetiva e construtiva…"
+              placeholder="Descreva o feedback de forma objetiva e construtiva..."
               rows={6}
               required
               style={{ resize: "vertical", lineHeight: 1.6 }}
             />
           </div>
 
-          {/* Feedback info */}
           {selectedMember && (
             <div style={{
               background: "var(--panel-2)", border: "1px solid var(--border-soft)",
               borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "var(--muted)",
             }}>
-              O feedback será enviado para o gestor do time <strong style={{ color: "var(--text)" }}>{selectedTeam?.label}</strong> com identificação de <strong style={{ color: "var(--text)" }}>{selectedMember.name}</strong>.
+              O feedback sera enviado para o gestor do time <strong style={{ color: "var(--text)" }}>{selectedTeam?.label}</strong> com identificacao de <strong style={{ color: "var(--text)" }}>{selectedMember.name}</strong>.
             </div>
           )}
 
-          {/* Status messages */}
           {status === "ok" && (
             <div style={{ background: "rgba(70,209,127,0.1)", border: "1px solid rgba(70,209,127,0.3)", color: "#46d17f", borderRadius: 9, padding: "10px 14px", fontSize: 13 }}>
-              ✓ Feedback enviado com sucesso! O gestor foi notificado por e-mail.
+              Feedback enviado com sucesso! O gestor foi notificado por e-mail.
             </div>
           )}
           {status === "error" && (
@@ -154,7 +203,7 @@ export default function FeedbackPage() {
             disabled={status === "sending" || !team || !memberEmail || !text.trim()}
             style={{ alignSelf: "flex-start", padding: "10px 24px" }}
           >
-            {status === "sending" ? "Enviando…" : "Salvar e Enviar"}
+            {status === "sending" ? "Enviando..." : "Salvar e Enviar"}
           </button>
         </form>
       </div>

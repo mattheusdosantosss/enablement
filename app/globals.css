@@ -2,6 +2,8 @@
   --accent: #ff6a1a;
   --accent-2: #ffa24d;
   --accent-soft: rgba(255, 106, 26, 0.14);
+  --blue-psa: #053caa;
+  --blue-psa-soft: rgba(5, 60, 170, 0.15);
   --green: #46d17f;
   --amber: #ffce4d;
   --red: #ff5a5a;
@@ -10,17 +12,17 @@
   --font-sans: "Archivo";
   --font-mono: "JetBrains Mono";
 
-  --bg: #0b0b0e;
-  --bg-elev: #101014;
-  --panel: #141417;
-  --panel-2: #1a1a20;
-  --panel-3: #202028;
-  --border: #26262c;
-  --border-soft: #1e1e23;
-  --text: #f4f4f6;
-  --muted: #c4c4cd;
-  --faint: #9a9aa4;
-  --track: #232329;
+  --bg: #0f0f13;
+  --bg-elev: #131318;
+  --panel: #18181f;
+  --panel-2: #1f1f28;
+  --panel-3: #26262f;
+  --border: #2e2e38;
+  --border-soft: #242430;
+  --text: #f0f0f4;
+  --muted: #ccccd6;
+  --faint: #a4a4b2;
+  --track: #2a2a34;
   --shadow: none;
 }
 

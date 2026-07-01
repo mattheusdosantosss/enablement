@@ -96,7 +96,7 @@ export default async function EquipesPage({
           Equipes
         </h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Performance individual por time — mês atual
+          Performance individual por time - mes atual
         </p>
       </div>
 

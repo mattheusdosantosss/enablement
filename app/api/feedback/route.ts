@@ -17,47 +17,54 @@ const TEAM_LABEL: Record<string, string> = {
 
 export async function POST(req: Request) {
   const user = lerSessao(cookies().get(COOKIE)?.value);
-  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any;
   try { body = await req.json(); } catch {
-    return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
+    return NextResponse.json({ error: "Corpo invalido." }, { status: 400 });
   }
 
-  const { team, memberName, memberEmail, text } = body ?? {};
+  const { team, memberName, memberEmail, carga, gestao, objetivo, text } = body ?? {};
   if (!team || !memberName || !text?.trim()) {
-    return NextResponse.json({ error: "Campos obrigatórios faltando." }, { status: 400 });
+    return NextResponse.json({ error: "Campos obrigatorios faltando." }, { status: 400 });
   }
 
   const managerEmail = MANAGERS[String(team).toLowerCase()];
   if (!managerEmail) {
-    return NextResponse.json({ error: `Time "${team}" não reconhecido.` }, { status: 400 });
+    return NextResponse.json({ error: `Time "${team}" nao reconhecido.` }, { status: 400 });
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const label = TEAM_LABEL[team] ?? team;
+  const label  = TEAM_LABEL[team] ?? team;
+
+  const extraRows = [
+    carga    ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Carga Horaria</td><td style="color:#f0f0f4">${carga}</td></tr>` : "",
+    gestao   ? `<tr><td style="padding:6px 0;color:#a4a4b2">Gestao</td><td style="color:#f0f0f4">${gestao}</td></tr>` : "",
+    objetivo ? `<tr><td style="padding:6px 0;color:#a4a4b2">Objetivo do Treinamento</td><td style="color:#f0f0f4">${objetivo}</td></tr>` : "",
+  ].join("");
 
   const { error } = await resend.emails.send({
     from: `PSA Enablement <${process.env.RESEND_FROM ?? "enablement@profissionaissa.com"}>`,
     to: managerEmail,
-    subject: `[Feedback] ${memberName} · Time ${label}`,
+    subject: `[Feedback] ${memberName} - Time ${label}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
         <div style="background:#ff6a1a;padding:20px 24px;border-radius:12px 12px 0 0">
-          <h2 style="color:#fff;margin:0;font-size:18px">PSA · Enablement</h2>
+          <h2 style="color:#fff;margin:0;font-size:18px">PSA Enablement</h2>
           <p style="color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:13px">Novo feedback recebido</p>
         </div>
-        <div style="background:#1a1a20;padding:24px;border:1px solid #26262c;border-top:0;border-radius:0 0 12px 12px">
-          <table style="width:100%;font-size:13px;color:#c4c4cd;margin-bottom:20px">
-            <tr><td style="padding:6px 0;color:#9a9aa4;width:120px">Membro</td><td style="color:#f4f4f6;font-weight:600">${memberName}</td></tr>
-            <tr><td style="padding:6px 0;color:#9a9aa4">E-mail</td><td style="color:#f4f4f6">${memberEmail || "—"}</td></tr>
-            <tr><td style="padding:6px 0;color:#9a9aa4">Time</td><td style="color:#f4f4f6">${label}</td></tr>
-            <tr><td style="padding:6px 0;color:#9a9aa4">Enviado por</td><td style="color:#f4f4f6;font-weight:600">${user.email}</td></tr>
+        <div style="background:#18181f;padding:24px;border:1px solid #2e2e38;border-top:0;border-radius:0 0 12px 12px">
+          <table style="width:100%;font-size:13px;color:#ccccd6;margin-bottom:20px">
+            <tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Membro</td><td style="color:#f0f0f4;font-weight:600">${memberName}</td></tr>
+            <tr><td style="padding:6px 0;color:#a4a4b2">E-mail</td><td style="color:#f0f0f4">${memberEmail || "N/A"}</td></tr>
+            <tr><td style="padding:6px 0;color:#a4a4b2">Time</td><td style="color:#f0f0f4">${label}</td></tr>
+            ${extraRows}
+            <tr><td style="padding:6px 0;color:#a4a4b2">Enviado por</td><td style="color:#f0f0f4;font-weight:600">${user.email}</td></tr>
           </table>
-          <div style="background:#101014;border:1px solid #26262c;border-radius:8px;padding:16px">
-            <p style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#9a9aa4">Feedback</p>
-            <p style="margin:0;font-size:14px;color:#f4f4f6;line-height:1.6;white-space:pre-wrap">${text}</p>
+          <div style="background:#131318;border:1px solid #2e2e38;border-radius:8px;padding:16px">
+            <p style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#a4a4b2">Feedback</p>
+            <p style="margin:0;font-size:14px;color:#f0f0f4;line-height:1.6;white-space:pre-wrap">${text}</p>
           </div>
         </div>
       </div>

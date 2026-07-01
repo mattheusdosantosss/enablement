@@ -19,7 +19,12 @@ const TEAMS = [
 ];
 
 const CARGA_OPTIONS = ["30 min", "45 min", "1h", "1h30", "2h"];
-const GESTAO_OPTIONS = ["Líder Tático", "Coordenador", "Gerente", "Diretor"];
+const GESTAO_OPTIONS = [
+  "Nicollas Blanco Lenuzza",
+  "Leandro Lara Bengochea",
+  "Cesar Luiz dos Santos Filho",
+  "Eduardo Tavares",
+];
 
 type Status = "idle" | "sending" | "ok" | "error";
 

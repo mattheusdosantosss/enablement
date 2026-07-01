@@ -4,11 +4,11 @@ import { B2B_TEAM, B2C_TEAM, FARMER_SQUADS, type TeamMember } from "./teams";
 const CONFIG_KEY = "psa:team_config";
 
 function getRedis(): Redis | null {
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) return null;
-  return new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-  });
+  // Suporta Vercel KV (KV_REST_API_URL/TOKEN) e Upstash direto (UPSTASH_REDIS_REST_URL/TOKEN)
+  const url   = process.env.KV_REST_API_URL   ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  return new Redis({ url, token });
 }
 
 export interface ConfigSquad {

@@ -2,6 +2,7 @@ import nextDynamic from "next/dynamic";
 import { getB2BData } from "@/lib/hubspot/b2b";
 import { getB2CData } from "@/lib/hubspot/b2c";
 import { getFarmerData, type FarmerOrigin } from "@/lib/hubspot/farmer";
+import FarmersChartGrid from "@/components/FarmersChartGrid";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -116,13 +117,13 @@ export default async function InicioPage({
 
   const allRows = visibleSquads.flatMap((s) => s.rows);
 
-  const raisedData  = allRows.map((r) => ({ name: r.name, value: r.raised      ?? 0 }));
-  const closedData  = allRows.map((r) => ({ name: r.name, value: r.closedCount ?? 0 }));
+  const raisedData  = allRows.map((r) => ({ name: r.name, id: r.id, value: r.raised      ?? 0 }));
+  const closedData  = allRows.map((r) => ({ name: r.name, id: r.id, value: r.closedCount ?? 0 }));
   const revenueData = allRows.map((r) => ({
-    name: r.name,
+    name: r.name, id: r.id,
     value: valor === "liquido" ? (r.revenueLiquido ?? 0) : (r.converted ?? 0),
   }));
-  const tramitaData = allRows.map((r) => ({ name: r.name, value: r.inProgress  ?? 0 }));
+  const tramitaData = allRows.map((r) => ({ name: r.name, id: r.id, value: r.inProgress  ?? 0 }));
 
   const originLabel = ORIGIN_TABS.find(t => t.key === origin)?.label ?? "Ambas";
 
@@ -215,47 +216,19 @@ export default async function InicioPage({
             {allRows.length === 0 ? (
               <EmptyState label="Nenhum farmer encontrado" />
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-                <TeamBarChart
-                  title="Demandas Levantadas"
-                  subtitle={`${originLabel} · Data de qualificacao · ${mesLabel}`}
-                  data={raisedData}
-                  color="var(--orange)"
-                  metric="Demandas"
-                />
-                <TeamBarChart
-                  title="Negocios Fechados"
-                  subtitle={`${originLabel} · Fechamento no mes · ${mesLabel}`}
-                  data={closedData}
-                  color="var(--blue)"
-                  metric="Negocios"
-                />
-                <TeamBarChart
-                  title={`Receita Total (${valor === "liquido" ? "Liquida" : "Bruta"})`}
-                  subtitle={`${originLabel} · Fechamento no mes · ${mesLabel}`}
-                  data={revenueData}
-                  color="var(--green)"
-                  format="brl"
-                  metric={valor === "liquido" ? "Receita liquida" : "Receita bruta"}
-                  headerRight={
-                    <div className="seg">
-                      {VALOR_TABS.map((t) => (
-                        <Link key={t.key} href={buildFarmerHref({ valor: t.key })}
-                          className={`seg-item${valor === t.key ? " active sub" : ""}`}>
-                          {t.label}
-                        </Link>
-                      ))}
-                    </div>
-                  }
-                />
-                <TeamBarChart
-                  title="Tramitacoes em Andamento"
-                  subtitle="Pipeline CS · Snapshot ao vivo"
-                  data={tramitaData}
-                  color="var(--accent)"
-                  metric="Tramitacoes"
-                />
-              </div>
+              <FarmersChartGrid
+                raisedData={raisedData}
+                closedData={closedData}
+                revenueData={revenueData}
+                tramitaData={tramitaData}
+                valor={valor}
+                origin={origin}
+                mes={mes}
+                squad={squad}
+                currentMes={currentMes}
+                mesLabel={mesLabel}
+                originLabel={originLabel}
+              />
             )}
           </>
         ) : <EmptyState label="Sem dados para o time Farmers" />

@@ -1,10 +1,9 @@
-import { hs, hsPost } from "./client";
+import { hs, hsPost, hsPostAll } from "./client";
 import { getTeamConfig } from "@/lib/config";
 import { FARMER_SQUADS as STATIC_FARMER_SQUADS } from "@/lib/teams";
 import type { ProfRow } from "@/components/ProfessionalTable";
 import type { FarmerSquadGroup } from "@/components/FarmerTable";
 
-// Mesmos stage IDs do psa-farmer
 const STAGE_GANHO_CONTRATO   = process.env.HUBSPOT_STAGE_GANHO_CONTRATO   || "1076664460";
 const STAGE_NEGOCIO_FECHADO  = process.env.HUBSPOT_STAGE_NEGOCIO_FECHADO  || "1076664462";
 const PIPELINE_CS            = process.env.HUBSPOT_PIPELINE_CS            || "748675953";
@@ -13,8 +12,7 @@ const GANHO_STAGES = [STAGE_GANHO_CONTRATO, STAGE_NEGOCIO_FECHADO];
 
 export type FarmerOrigin = "carteira" | "crm" | "ambas";
 
-// Labels exibidos no HubSpot — usados para buscar o value interno via API de propriedades
-const ORIGIN_LABELS: Record<Exclude<FarmerOrigin, "ambas">, string[]> = {
+export const ORIGIN_LABELS: Record<Exclude<FarmerOrigin, "ambas">, string[]> = {
   carteira: ["Carteira do Farmer"],
   crm:      ["Curador"],
 };
@@ -35,9 +33,9 @@ async function fetchOriginOptions() {
   return _originOptionsCache;
 }
 
-async function resolveOriginValues(labels: string[]): Promise<string[]> {
+export async function resolveOriginValues(labels: string[]): Promise<string[]> {
   const options = await fetchOriginOptions();
-  if (!options.length) return labels; // fallback: usa labels como estão
+  if (!options.length) return labels;
   return labels.map((label) => {
     const opt =
       options.find((o) => o.label === label) ??
@@ -45,17 +43,22 @@ async function resolveOriginValues(labels: string[]): Promise<string[]> {
       options.find((o) => o.value === label);
     return opt ? opt.value : label;
   });
-};
+}
+
+// Helper para a API route: resolve origins a partir do FarmerOrigin
+export async function getOrigins(origin: FarmerOrigin): Promise<string[] | null> {
+  if (origin === "ambas") return null;
+  return resolveOriginValues(ORIGIN_LABELS[origin]);
+}
 
 export interface FarmerOptions {
   origin?: FarmerOrigin;
-  mes?: string; // YYYY-MM; omitir = mês atual
+  mes?: string;
 }
 
-// Ajuste fuso BRT (UTC-3) para campos datetime
 const BR_OFFSET_MS = 3 * 60 * 60 * 1000;
 
-function monthRange(mes?: string) {
+export function monthRange(mes?: string) {
   let year: number, month: number;
   if (mes && /^\d{4}-\d{2}$/.test(mes)) {
     [year, month] = mes.split("-").map(Number);
@@ -90,12 +93,18 @@ export interface FarmerData {
   squads: FarmerSquadGroup[];
 }
 
+export interface FarmerDealItem {
+  id: string;
+  name: string;
+  date: string;
+}
+
 // ── Resolve emails → ownerIds ─────────────────────────────────────────────────
 async function resolveOwnerIds(allEmails: Set<string>): Promise<Map<string, string>> {
   const data = await hs<{ results: { id: string; email: string }[] }>(
     "/crm/v3/owners?limit=200"
   );
-  const map = new Map<string, string>(); // email → ownerId
+  const map = new Map<string, string>();
   for (const o of data.results) {
     const email = (o.email ?? "").toLowerCase();
     if (allEmails.has(email)) map.set(email, o.id);
@@ -104,7 +113,7 @@ async function resolveOwnerIds(allEmails: Set<string>): Promise<Map<string, stri
 }
 
 // ── Resolve estágios CS dinamicamente ─────────────────────────────────────────
-let csStagesCache: { abertos: string[]; } | null = null;
+let csStagesCache: { abertos: string[] } | null = null;
 
 async function resolveCsStages(): Promise<{ abertos: string[] }> {
   if (csStagesCache) return csStagesCache;
@@ -124,10 +133,10 @@ async function resolveCsStages(): Promise<{ abertos: string[] }> {
   }
 }
 
-// ── Fetch deals de demandas levantadas (por data de qualificação) ──────────────
+// ── Fetch deals levantadas (paginado) ─────────────────────────────────────────
 async function fetchRaisedDeals(ownerIds: string[], from: string, to: string, origins: string[] | null) {
   const originFilter = origins ? [{ propertyName: "origem_do_lead", operator: "IN", values: origins }] : [];
-  const body = {
+  return hsPostAll("/crm/v3/objects/deals/search", {
     filterGroups: [{
       filters: [
         { propertyName: "pipedrive___data_de_qualificacao", operator: "HAS_PROPERTY" },
@@ -146,17 +155,13 @@ async function fetchRaisedDeals(ownerIds: string[], from: string, to: string, or
       "closed_lost_reason",
     ],
     limit: 200,
-  };
-  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
-    "/crm/v3/objects/deals/search", body
-  );
-  return res.results;
+  });
 }
 
-// ── Fetch deals ganhos no mês (por closedate) ──────────────────────────────────
+// ── Fetch deals convertidas (paginado) ────────────────────────────────────────
 async function fetchConvertedDeals(ownerIds: string[], from: string, to: string, origins: string[] | null) {
   const originFilter = origins ? [{ propertyName: "origem_do_lead", operator: "IN", values: origins }] : [];
-  const body = {
+  const results = await hsPostAll("/crm/v3/objects/deals/search", {
     filterGroups: [{
       filters: [
         ...originFilter,
@@ -173,20 +178,14 @@ async function fetchConvertedDeals(ownerIds: string[], from: string, to: string,
       "closed_lost_reason",
     ],
     limit: 200,
-  };
-  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
-    "/crm/v3/objects/deals/search", body
-  );
-  // Exclui "Fora do MOA" — idêntico ao psa-farmer
-  return res.results.filter(
-    (d) => d.properties.closed_lost_reason !== "Fora do MOA"
-  );
+  });
+  return results.filter((d) => d.properties.closed_lost_reason !== "Fora do MOA");
 }
 
-// ── Fetch tickets CS em andamento (snapshot ao vivo) ──────────────────────────
+// ── Fetch tickets CS (paginado) ───────────────────────────────────────────────
 async function fetchCsInProgress(ownerIds: string[], abertos: string[]) {
   if (!abertos.length) return [];
-  const body = {
+  return hsPostAll("/crm/v3/objects/tickets/search", {
     filterGroups: [{
       filters: [
         { propertyName: "hs_pipeline", operator: "EQ", value: PIPELINE_CS },
@@ -196,16 +195,12 @@ async function fetchCsInProgress(ownerIds: string[], abertos: string[]) {
     }],
     properties: ["hubspot_owner_id"],
     limit: 200,
-  };
-  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
-    "/crm/v3/objects/tickets/search", body
-  );
-  return res.results;
+  });
 }
 
-// ── Fetch reuniões agendadas no mês ───────────────────────────────────────────
+// ── Fetch reuniões (paginado) ─────────────────────────────────────────────────
 async function fetchMeetings(ownerIds: string[], from: string, to: string) {
-  const body = {
+  return hsPostAll("/crm/v3/objects/meetings/search", {
     filterGroups: [{
       filters: [
         { propertyName: "hubspot_owner_id", operator: "IN", values: ownerIds.slice(0, 100) },
@@ -215,18 +210,68 @@ async function fetchMeetings(ownerIds: string[], from: string, to: string) {
     }],
     properties: ["hubspot_owner_id"],
     limit: 200,
-  };
-  const res = await hsPost<{ results: { properties: Record<string, string> }[] }>(
-    "/crm/v3/objects/meetings/search", body
-  );
-  return res.results;
+  });
+}
+
+// ── Deals de um farmer específico (para o modal) ──────────────────────────────
+export async function getFarmerDealsList(
+  ownerId: string,
+  type: "raised" | "converted",
+  mes: string,
+  origins: string[] | null
+): Promise<FarmerDealItem[]> {
+  const { from, to } = monthRange(mes || undefined);
+  const originFilter = origins ? [{ propertyName: "origem_do_lead", operator: "IN", values: origins }] : [];
+
+  if (type === "raised") {
+    const results = await hsPostAll("/crm/v3/objects/deals/search", {
+      filterGroups: [{
+        filters: [
+          { propertyName: "pipedrive___data_de_qualificacao", operator: "HAS_PROPERTY" },
+          ...originFilter,
+          { propertyName: "sdrfarmer_responsavel", operator: "EQ", value: ownerId },
+          { propertyName: "pipedrive___data_de_qualificacao", operator: "GTE", value: String(utcStart(from)) },
+          { propertyName: "pipedrive___data_de_qualificacao", operator: "LTE", value: String(utcEnd(to)) },
+        ],
+      }],
+      properties: ["dealname", "pipedrive___data_de_qualificacao"],
+      limit: 200,
+      sorts: [{ propertyName: "pipedrive___data_de_qualificacao", direction: "DESCENDING" }],
+    });
+    return results.map((d) => ({
+      id: d.id,
+      name: d.properties.dealname || "(sem nome)",
+      date: d.properties.pipedrive___data_de_qualificacao || "",
+    }));
+  } else {
+    const results = await hsPostAll("/crm/v3/objects/deals/search", {
+      filterGroups: [{
+        filters: [
+          ...originFilter,
+          { propertyName: "sdrfarmer_responsavel", operator: "EQ", value: ownerId },
+          { propertyName: "dealstage", operator: "IN", values: GANHO_STAGES },
+          { propertyName: "closedate", operator: "GTE", value: String(brtStart(from)) },
+          { propertyName: "closedate", operator: "LTE", value: String(brtEnd(to)) },
+        ],
+      }],
+      properties: ["dealname", "closedate", "closed_lost_reason"],
+      limit: 200,
+      sorts: [{ propertyName: "closedate", direction: "DESCENDING" }],
+    });
+    return results
+      .filter((d) => d.properties.closed_lost_reason !== "Fora do MOA")
+      .map((d) => ({
+        id: d.id,
+        name: d.properties.dealname || "(sem nome)",
+        date: d.properties.closedate || "",
+      }));
+  }
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
 
-  // null = não filtra por origem (Ambas), string[] = valores internos HubSpot resolvidos
   const originLabels: string[] | null = (!opts?.origin || opts.origin === "ambas")
     ? null
     : ORIGIN_LABELS[opts.origin];
@@ -247,22 +292,18 @@ export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
   const allOwnerIds = Array.from(emailToOwner.values());
   if (!allOwnerIds.length) return SEED_FARMER;
 
-  type DealResult = { properties: Record<string, string> };
-
   const [raised, converted, tickets, meetings] = await Promise.all([
-    fetchRaisedDeals(allOwnerIds, from, to, origins).catch(() => [] as DealResult[]),
-    fetchConvertedDeals(allOwnerIds, from, to, origins).catch(() => [] as DealResult[]),
+    fetchRaisedDeals(allOwnerIds, from, to, origins).catch(() => []),
+    fetchConvertedDeals(allOwnerIds, from, to, origins).catch(() => []),
     fetchCsInProgress(allOwnerIds, csStages.abertos).catch(() => []),
     fetchMeetings(allOwnerIds, from, to).catch(() => []),
   ]);
 
-  // Resolve nomes via owners
   const ownersData = await hs<{ results: { id: string; firstName: string; lastName: string; email: string }[] }>(
     "/crm/v3/owners?limit=200"
   );
   const ownerById = new Map(ownersData.results.map((o) => [o.id, o]));
 
-  // ── Agregar por squad ────────────────────────────────────────────────────────
   const squadGroups: FarmerSquadGroup[] = FARMER_SQUADS.map((squad) => {
     const rows: ProfRow[] = squad.members.map((m) => {
       const email = (m as { email: string }).email ?? String(m);
@@ -284,7 +325,7 @@ export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
       const myRaised    = raised.filter((d) => d.properties.sdrfarmer_responsavel === ownerId);
       const myConverted = converted.filter((d) => d.properties.sdrfarmer_responsavel === ownerId);
       const myTickets   = tickets.filter((t) => t.properties.hubspot_owner_id === ownerId);
-      const myMeetings  = meetings.filter((m) => m.properties.hubspot_owner_id === ownerId);
+      const myMeetings  = meetings.filter((mm) => mm.properties.hubspot_owner_id === ownerId);
 
       row.raised    = myRaised.length;
       row.converted = myConverted.reduce((s, d) => {
@@ -307,12 +348,12 @@ export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
 
   return {
     totals: {
-      meetings:      allRows.reduce((s, r) => s + (r.meetings ?? 0), 0),
-      inProgress:    allRows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
-      raised:        allRows.reduce((s, r) => s + (r.raised ?? 0), 0),
-      converted:     allRows.reduce((s, r) => s + (r.converted ?? 0), 0),
-      closedCount:   allRows.reduce((s, r) => s + (r.closedCount ?? 0), 0),
-      revenueLiquido:allRows.reduce((s, r) => s + (r.revenueLiquido ?? 0), 0),
+      meetings:       allRows.reduce((s, r) => s + (r.meetings ?? 0), 0),
+      inProgress:     allRows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
+      raised:         allRows.reduce((s, r) => s + (r.raised ?? 0), 0),
+      converted:      allRows.reduce((s, r) => s + (r.converted ?? 0), 0),
+      closedCount:    allRows.reduce((s, r) => s + (r.closedCount ?? 0), 0),
+      revenueLiquido: allRows.reduce((s, r) => s + (r.revenueLiquido ?? 0), 0),
     },
     rows: allRows,
     squads: squadGroups,

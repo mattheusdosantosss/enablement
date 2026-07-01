@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import type { ReactNode } from "react";
 
-interface BarEntry { name: string; value: number; }
+export interface BarEntry { name: string; value: number; id?: string; }
 
 interface TeamBarChartProps {
   title: string;
@@ -16,15 +16,12 @@ interface TeamBarChartProps {
   format?: "brl" | "number";
   metric: string;
   headerRight?: ReactNode;
+  onBarClick?: (entry: BarEntry) => void;
 }
 
-function shortName(name: string) {
-  const parts = name.split(" ").filter(Boolean);
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[parts.length - 1]}`;
-}
-
-export default function TeamBarChart({ title, subtitle, data, color, format, metric, headerRight }: TeamBarChartProps) {
+export default function TeamBarChart({
+  title, subtitle, data, color, format, metric, headerRight, onBarClick,
+}: TeamBarChartProps) {
   const fmt = format === "brl"
     ? (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`
     : (v: number) => String(v);
@@ -52,14 +49,21 @@ export default function TeamBarChart({ title, subtitle, data, color, format, met
 
       <ResponsiveContainer width="100%" height={Math.max(220, sorted.length * 48)}>
         <BarChart
-          data={sorted.map((d) => ({ ...d, name: shortName(d.name) }))}
+          data={sorted}
           layout="vertical"
           margin={{ top: 0, right: 60, left: 0, bottom: 0 }}
+          onClick={(chartData: Record<string, unknown>) => {
+            if (!onBarClick) return;
+            const payloads = chartData?.activePayload as { payload: BarEntry }[] | undefined;
+            if (!payloads?.[0]) return;
+            onBarClick(payloads[0].payload);
+          }}
+          style={onBarClick ? { cursor: "pointer" } : undefined}
         >
           <CartesianGrid horizontal={false} stroke="var(--border-soft)" />
           <XAxis type="number" domain={[0, max]} hide />
           <YAxis
-            type="category" dataKey="name" width={130}
+            type="category" dataKey="name" width={160}
             tick={{ fill: "var(--muted)", fontSize: 12, fontFamily: "var(--font-sans)" }}
             axisLine={false} tickLine={false}
           />
@@ -84,6 +88,12 @@ export default function TeamBarChart({ title, subtitle, data, color, format, met
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+
+      {onBarClick && (
+        <div style={{ fontSize: 11, color: "var(--faint)", textAlign: "center", marginTop: 4, paddingBottom: 4 }}>
+          Clique em uma barra para ver os detalhes
+        </div>
+      )}
     </div>
   );
 }

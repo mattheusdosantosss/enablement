@@ -52,13 +52,6 @@ export default function TeamBarChart({
           data={sorted}
           layout="vertical"
           margin={{ top: 0, right: 60, left: 0, bottom: 0 }}
-          onClick={(chartData: Record<string, unknown>) => {
-            if (!onBarClick) return;
-            const payloads = chartData?.activePayload as { payload: BarEntry }[] | undefined;
-            if (!payloads?.[0]) return;
-            onBarClick(payloads[0].payload);
-          }}
-          style={onBarClick ? { cursor: "pointer" } : undefined}
         >
           <CartesianGrid horizontal={false} stroke="var(--border-soft)" />
           <XAxis type="number" domain={[0, max]} hide />
@@ -81,7 +74,14 @@ export default function TeamBarChart({
             itemStyle={{ color: "rgba(255,255,255,0.85)" }}
             formatter={(v) => [fmt(Number(v ?? 0)), metric]}
           />
-          <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={28}>
+          <Bar
+            dataKey="value"
+            radius={[0, 6, 6, 0]}
+            maxBarSize={28}
+            cursor={onBarClick ? "pointer" : "default"}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onClick={onBarClick ? (data: any) => onBarClick(data as BarEntry) : undefined}
+          >
             {sorted.map((_, i) => (
               <Cell key={i} fill={i === 0 ? color : `${color}99`} />
             ))}

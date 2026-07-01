@@ -21,39 +21,21 @@ const SQUAD_TABS = [
   { key: "leticia", label: "Squad Leticia"  },
 ];
 
-function TabBar({ tabs, activeKey, buildHref, secondary }: {
+function TabBar({ tabs, activeKey, buildHref, sub }: {
   tabs: { key: string; label: string }[];
   activeKey: string;
   buildHref: (key: string) => string;
-  secondary?: boolean;
+  sub?: boolean;
 }) {
   return (
-    <div style={{
-      display: "flex", gap: 4,
-      borderBottom: `1px solid var(--border-soft)`,
-      marginBottom: secondary ? 20 : 24,
-    }}>
+    <div className="seg" style={{ marginBottom: sub ? 20 : 28 }}>
       {tabs.map((tab) => {
         const active = tab.key === activeKey;
         return (
           <Link
             key={tab.key}
             href={buildHref(tab.key)}
-            style={{
-              display: "inline-block",
-              padding: secondary ? "7px 14px" : "9px 20px",
-              fontFamily: "var(--font-psa), var(--font-sans)",
-              fontSize: secondary ? 11 : 12,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              textDecoration: "none",
-              borderRadius: "10px 10px 0 0",
-              color: active ? "var(--accent)" : "var(--muted)",
-              background: active ? "var(--accent-soft)" : "transparent",
-              borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
-              transition: "all .15s",
-            }}
+            className={`seg-item${active ? ` active${sub ? " sub" : ""}` : ""}`}
           >
             {tab.label}
           </Link>
@@ -139,7 +121,7 @@ export default async function InicioPage({
               tabs={SQUAD_TABS}
               activeKey={squad}
               buildHref={(key) => `/inicio?time=farmers&squad=${key}`}
-              secondary
+              sub
             />
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               {visibleSquads.map((sq) => (

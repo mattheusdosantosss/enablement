@@ -163,60 +163,25 @@ function MemberRow({ member, onRemove, onMove, squadOptions, currentSquad }: {
   );
 }
 
-/* ── TabBtn ──────────────────────────────────────────────────────────────── */
+/* ── TabBtn / SquadTabBtn — usam .seg-item do globals.css ── */
 function TabBtn({ label, active, count, onClick }: {
   label: string; active: boolean; count?: number; onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        border: "none", cursor: "pointer",
-        padding: "9px 20px",
-        fontFamily: "var(--font-psa), var(--font-sans)",
-        fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase",
-        borderRadius: "10px 10px 0 0",
-        color: active ? "var(--accent)" : "var(--muted)",
-        background: active ? "var(--accent-soft)" : "transparent",
-        borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
-        transition: "all .15s",
-        display: "flex", alignItems: "center", gap: 8,
-      }}
-    >
+    <button onClick={onClick} className={`seg-item${active ? " active" : ""}`}>
       {label}
-      {count !== undefined && (
-        <span style={{ fontSize: 10, fontFamily: "var(--font-mono), monospace", background: "var(--panel-3)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 7px", color: "var(--faint)" }}>
-          {count}
-        </span>
-      )}
+      {count !== undefined && <span className="seg-badge">{count}</span>}
     </button>
   );
 }
 
-/* ── Squad sub-tabs ──────────────────────────────────────────────────────── */
 function SquadTabBtn({ label, active, count, onClick }: {
   label: string; active: boolean; count: number; onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        border: "none", cursor: "pointer",
-        padding: "7px 16px",
-        fontFamily: "var(--font-psa), var(--font-sans)",
-        fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase",
-        borderRadius: "8px 8px 0 0",
-        color: active ? "var(--blue-psa)" : "var(--muted)",
-        background: active ? "var(--blue-psa-soft)" : "transparent",
-        borderBottom: active ? `2px solid var(--blue-psa)` : "2px solid transparent",
-        transition: "all .15s",
-        display: "flex", alignItems: "center", gap: 7,
-      }}
-    >
+    <button onClick={onClick} className={`seg-item${active ? " active sub" : ""}`}>
       {label}
-      <span style={{ fontSize: 10, background: "var(--panel-3)", border: "1px solid var(--border)", borderRadius: 99, padding: "1px 6px", color: "var(--faint)" }}>
-        {count}
-      </span>
+      <span className="seg-badge">{count}</span>
     </button>
   );
 }
@@ -330,7 +295,7 @@ export default function ConfiguracoesPage() {
       {!loading && config && (
         <>
           {/* Tabs principais */}
-          <div style={{ display: "flex", gap: 6, borderBottom: "1px solid var(--border-soft)", marginBottom: 24 }}>
+          <div className="seg">
             <TabBtn label="B2B"     active={tab === "b2b"}     count={config.b2b.length}     onClick={() => setTab("b2b")} />
             <TabBtn label="B2C"     active={tab === "b2c"}     count={config.b2c.length}     onClick={() => setTab("b2c")} />
             <TabBtn label="Farmers" active={tab === "farmers"} count={config.farmerSquads.reduce((s, sq) => s + sq.members.length, 0)} onClick={() => setTab("farmers")} />
@@ -368,7 +333,7 @@ export default function ConfiguracoesPage() {
           {tab === "farmers" && (
             <div>
               {/* Sub-tabs squad */}
-              <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border-soft)", marginBottom: 20 }}>
+              <div className="seg" style={{ marginBottom: 20 }}>
                 {config.farmerSquads.map((sq) => (
                   <SquadTabBtn
                     key={sq.id}

@@ -11,8 +11,17 @@ const PIPELINE_CS            = process.env.HUBSPOT_PIPELINE_CS            || "74
 
 const GANHO_STAGES = [STAGE_GANHO_CONTRATO, STAGE_NEGOCIO_FECHADO];
 
-// Origens válidas — idêntico ao psa-farmer
-const FARMER_LEAD_ORIGINS = ["Carteira do Farmer", "Curador"];
+export type FarmerOrigin = "carteira" | "crm" | "ambas";
+
+const ORIGIN_VALUES: Record<FarmerOrigin, string[]> = {
+  carteira: ["Carteira do Farmer"],
+  crm:      ["Curador"],
+  ambas:    ["Carteira do Farmer", "Curador"],
+};
+
+export interface FarmerOptions {
+  origin?: FarmerOrigin;
+}
 
 // Ajuste fuso BRT (UTC-3) para campos datetime
 const BR_OFFSET_MS = 3 * 60 * 60 * 1000;
@@ -30,7 +39,14 @@ const brtStart = (d: string) => new Date(d).getTime() + BR_OFFSET_MS;
 const brtEnd   = (d: string) => new Date(d).getTime() + BR_OFFSET_MS + 86_400_000 - 1;
 
 export interface FarmerData {
-  totals: { meetings: number; inProgress: number; raised: number; converted: number };
+  totals: {
+    meetings: number;
+    inProgress: number;
+    raised: number;
+    converted: number;
+    closedCount: number;
+    revenueLiquido: number;
+  };
   rows: ProfRow[];
   squads: FarmerSquadGroup[];
 }
@@ -70,12 +86,12 @@ async function resolveCsStages(): Promise<{ abertos: string[] }> {
 }
 
 // ── Fetch deals de demandas levantadas (por data de qualificação) ──────────────
-async function fetchRaisedDeals(ownerIds: string[], from: string, to: string) {
+async function fetchRaisedDeals(ownerIds: string[], from: string, to: string, origins: string[]) {
   const body = {
     filterGroups: [{
       filters: [
         { propertyName: "pipedrive___data_de_qualificacao", operator: "HAS_PROPERTY" },
-        { propertyName: "origem_do_lead", operator: "IN", values: FARMER_LEAD_ORIGINS },
+        { propertyName: "origem_do_lead", operator: "IN", values: origins },
         { propertyName: "sdrfarmer_responsavel", operator: "IN", values: ownerIds.slice(0, 100) },
         { propertyName: "pipedrive___data_de_qualificacao", operator: "GTE", value: String(utcStart(from)) },
         { propertyName: "pipedrive___data_de_qualificacao", operator: "LTE", value: String(utcEnd(to)) },
@@ -98,11 +114,11 @@ async function fetchRaisedDeals(ownerIds: string[], from: string, to: string) {
 }
 
 // ── Fetch deals ganhos no mês (por closedate) ──────────────────────────────────
-async function fetchConvertedDeals(ownerIds: string[], from: string, to: string) {
+async function fetchConvertedDeals(ownerIds: string[], from: string, to: string, origins: string[]) {
   const body = {
     filterGroups: [{
       filters: [
-        { propertyName: "origem_do_lead", operator: "IN", values: FARMER_LEAD_ORIGINS },
+        { propertyName: "origem_do_lead", operator: "IN", values: origins },
         { propertyName: "sdrfarmer_responsavel", operator: "IN", values: ownerIds.slice(0, 100) },
         { propertyName: "dealstage", operator: "IN", values: GANHO_STAGES },
         { propertyName: "closedate", operator: "GTE", value: String(brtStart(from)) },
@@ -166,8 +182,10 @@ async function fetchMeetings(ownerIds: string[], from: string, to: string) {
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
-export async function getFarmerData(): Promise<FarmerData> {
+export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
+
+  const origins = ORIGIN_VALUES[opts?.origin ?? "ambas"];
 
   const { farmerSquads: FARMER_SQUADS } = await getTeamConfig();
   const ALL_FARMER_EMAILS = new Set(FARMER_SQUADS.flatMap((s) => s.members.map((m) => m.email.toLowerCase())));
@@ -183,8 +201,8 @@ export async function getFarmerData(): Promise<FarmerData> {
   if (!allOwnerIds.length) return SEED_FARMER;
 
   const [raised, converted, tickets, meetings] = await Promise.all([
-    fetchRaisedDeals(allOwnerIds, from, to).catch(() => []),
-    fetchConvertedDeals(allOwnerIds, from, to).catch(() => []),
+    fetchRaisedDeals(allOwnerIds, from, to, origins).catch(() => []),
+    fetchConvertedDeals(allOwnerIds, from, to, origins).catch(() => []),
     fetchCsInProgress(allOwnerIds, csStages.abertos).catch(() => []),
     fetchMeetings(allOwnerIds, from, to).catch(() => []),
   ]);
@@ -214,24 +232,20 @@ export async function getFarmerData(): Promise<FarmerData> {
       };
       if (!ownerId) return row;
 
-      row.raised = raised.filter(
-        (d) => d.properties.sdrfarmer_responsavel === ownerId
-      ).length;
+      const myRaised    = raised.filter((d) => d.properties.sdrfarmer_responsavel === ownerId);
+      const myConverted = converted.filter((d) => d.properties.sdrfarmer_responsavel === ownerId);
+      const myTickets   = tickets.filter((t) => t.properties.hubspot_owner_id === ownerId);
+      const myMeetings  = meetings.filter((m) => m.properties.hubspot_owner_id === ownerId);
 
-      row.converted = converted
-        .filter((d) => d.properties.sdrfarmer_responsavel === ownerId)
-        .reduce((s, d) => {
-          const v = d.properties.valor_total_do_contrato__bruto___ganho_;
-          return s + Number(v || d.properties.amount || 0);
-        }, 0);
-
-      row.inProgress = tickets.filter(
-        (t) => t.properties.hubspot_owner_id === ownerId
-      ).length;
-
-      row.meetings = meetings.filter(
-        (m) => m.properties.hubspot_owner_id === ownerId
-      ).length;
+      row.raised    = myRaised.length;
+      row.converted = myConverted.reduce((s, d) => {
+        const v = d.properties.valor_total_do_contrato__bruto___ganho_;
+        return s + Number(v || d.properties.amount || 0);
+      }, 0);
+      row.closedCount    = myConverted.length;
+      row.revenueLiquido = myConverted.reduce((s, d) => s + Number(d.properties.amount || 0), 0);
+      row.inProgress = myTickets.length;
+      row.meetings   = myMeetings.length;
 
       return row;
     });
@@ -244,10 +258,12 @@ export async function getFarmerData(): Promise<FarmerData> {
 
   return {
     totals: {
-      meetings:   allRows.reduce((s, r) => s + (r.meetings ?? 0), 0),
-      inProgress: allRows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
-      raised:     allRows.reduce((s, r) => s + (r.raised ?? 0), 0),
-      converted:  allRows.reduce((s, r) => s + (r.converted ?? 0), 0),
+      meetings:      allRows.reduce((s, r) => s + (r.meetings ?? 0), 0),
+      inProgress:    allRows.reduce((s, r) => s + (r.inProgress ?? 0), 0),
+      raised:        allRows.reduce((s, r) => s + (r.raised ?? 0), 0),
+      converted:     allRows.reduce((s, r) => s + (r.converted ?? 0), 0),
+      closedCount:   allRows.reduce((s, r) => s + (r.closedCount ?? 0), 0),
+      revenueLiquido:allRows.reduce((s, r) => s + (r.revenueLiquido ?? 0), 0),
     },
     rows: allRows,
     squads: squadGroups,
@@ -270,7 +286,7 @@ const SEED_SQUADS: FarmerSquadGroup[] = STATIC_FARMER_SQUADS.map((squad, si) => 
 }));
 
 const SEED_FARMER: FarmerData = {
-  totals: { meetings: 28, inProgress: 12, raised: 47, converted: 195000 },
+  totals: { meetings: 28, inProgress: 12, raised: 47, converted: 195000, closedCount: 8, revenueLiquido: 170000 },
   rows: SEED_SQUADS.flatMap((s) => s.rows),
   squads: SEED_SQUADS,
 };

@@ -15,7 +15,9 @@ export interface ProfRow {
   products?: string[];
   raised?: number;
   inProgress?: number;
-  converted?: number;
+  converted?: number;      // receita bruta dos negócios fechados
+  closedCount?: number;    // quantidade de negócios fechados
+  revenueLiquido?: number; // receita líquida dos negócios fechados
 }
 
 function initials(name: string) {

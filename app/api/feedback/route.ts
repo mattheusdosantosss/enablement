@@ -2,8 +2,49 @@ import { NextResponse } from "next/server";
 import { lerSessao, COOKIE } from "@/lib/auth";
 import { cookies } from "next/headers";
 import { Resend } from "resend";
+import { Redis } from "@upstash/redis";
 
 export const dynamic = "force-dynamic";
+
+const HISTORY_KEY = "psa:feedback_history";
+
+function getRedis(): Redis | null {
+  const url   = process.env.KV_REST_API_URL   ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  return new Redis({ url, token });
+}
+
+export interface FeedbackEntry {
+  id: string;
+  sentAt: string;
+  team: string;
+  memberName: string;
+  memberEmail: string;
+  carga: string | null;
+  gestao: string | null;
+  objetivo: string | null;
+  text: string;
+  sentBy: string;
+}
+
+export async function GET(req: Request) {
+  const user = lerSessao(cookies().get(COOKIE)?.value);
+  if (!user) return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+
+  const redis = getRedis();
+  if (!redis) return NextResponse.json({ items: [] });
+
+  try {
+    const raw = await redis.lrange(HISTORY_KEY, 0, 49);
+    const items = (raw as (string | FeedbackEntry)[]).map((r) =>
+      typeof r === "string" ? JSON.parse(r) : r
+    ) as FeedbackEntry[];
+    return NextResponse.json({ items });
+  } catch {
+    return NextResponse.json({ items: [] });
+  }
+}
 
 const MANAGERS: Record<string, string> = {
   b2b:     "cesar.filho@profissionaissa.com",
@@ -75,6 +116,27 @@ export async function POST(req: Request) {
     console.error("Resend error:", error);
     return NextResponse.json({ error: "Falha ao enviar e-mail." }, { status: 500 });
   }
+
+  // Persiste no histórico
+  try {
+    const redis = getRedis();
+    if (redis) {
+      const entry: FeedbackEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        sentAt: new Date().toISOString(),
+        team: label,
+        memberName,
+        memberEmail: memberEmail ?? "",
+        carga: carga || null,
+        gestao: gestao || null,
+        objetivo: objetivo || null,
+        text,
+        sentBy: user.email,
+      };
+      await redis.lpush(HISTORY_KEY, JSON.stringify(entry));
+      await redis.ltrim(HISTORY_KEY, 0, 99);
+    }
+  } catch { /* histórico não crítico */ }
 
   return NextResponse.json({ ok: true });
 }

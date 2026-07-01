@@ -34,7 +34,7 @@ function AddOwnerForm({
   const [query,    setQuery]    = useState("");
   const [focused,  setFocused]  = useState(false);
   const [selected, setSelected] = useState<HsOwner | null>(null);
-  const [dropPos,  setDropPos]  = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dropPos,  setDropPos]  = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   const [mounted,  setMounted]  = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -54,7 +54,13 @@ function AddOwnerForm({
   function openDropdown() {
     if (inputRef.current) {
       const r = inputRef.current.getBoundingClientRect();
-      setDropPos({ top: r.bottom + 4, left: r.left, width: r.width });
+      const spaceBelow = window.innerHeight - r.bottom - 12;
+      setDropPos({
+        top: r.bottom + 4,
+        left: r.left,
+        width: r.width,
+        maxHeight: Math.min(280, Math.max(120, spaceBelow)),
+      });
     }
     setFocused(true);
   }
@@ -123,7 +129,7 @@ function AddOwnerForm({
           zIndex: 9999,
           background: "var(--s1)", border: "1px solid var(--border)",
           borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.75)",
-          maxHeight: 280, overflowY: "auto",
+          maxHeight: dropPos.maxHeight, overflowY: "auto",
         }}>
           {noResults ? (
             <div style={{ padding: "14px 16px", fontSize: 12, color: "var(--text-3)", textAlign: "center" }}>

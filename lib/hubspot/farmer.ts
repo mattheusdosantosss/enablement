@@ -13,10 +13,38 @@ const GANHO_STAGES = [STAGE_GANHO_CONTRATO, STAGE_NEGOCIO_FECHADO];
 
 export type FarmerOrigin = "carteira" | "crm" | "ambas";
 
-const ORIGIN_VALUES: Record<FarmerOrigin, string[]> = {
+// Labels exibidos no HubSpot — usados para buscar o value interno via API de propriedades
+const ORIGIN_LABELS: Record<Exclude<FarmerOrigin, "ambas">, string[]> = {
   carteira: ["Carteira do Farmer"],
   crm:      ["Curador"],
-  ambas:    ["Carteira do Farmer", "Curador"],
+};
+
+// ── Resolve valores internos de enum para origem_do_lead ──────────────────────
+let _originOptionsCache: { label: string; value: string }[] | null = null;
+
+async function fetchOriginOptions() {
+  if (_originOptionsCache !== null) return _originOptionsCache;
+  try {
+    const data = await hs<{ options: { label: string; value: string; hidden?: boolean }[] }>(
+      "/crm/v3/properties/deals/origem_do_lead"
+    );
+    _originOptionsCache = (data.options ?? []).filter((o) => !o.hidden);
+  } catch {
+    _originOptionsCache = [];
+  }
+  return _originOptionsCache;
+}
+
+async function resolveOriginValues(labels: string[]): Promise<string[]> {
+  const options = await fetchOriginOptions();
+  if (!options.length) return labels; // fallback: usa labels como estão
+  return labels.map((label) => {
+    const opt =
+      options.find((o) => o.label === label) ??
+      options.find((o) => o.label.toLowerCase() === label.toLowerCase()) ??
+      options.find((o) => o.value === label);
+    return opt ? opt.value : label;
+  });
 };
 
 export interface FarmerOptions {
@@ -198,10 +226,13 @@ async function fetchMeetings(ownerIds: string[], from: string, to: string) {
 export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
 
-  // null = não filtra por origem (Ambas), string[] = filtra pelos valores específicos
-  const origins: string[] | null = (!opts?.origin || opts.origin === "ambas")
+  // null = não filtra por origem (Ambas), string[] = valores internos HubSpot resolvidos
+  const originLabels: string[] | null = (!opts?.origin || opts.origin === "ambas")
     ? null
-    : ORIGIN_VALUES[opts.origin];
+    : ORIGIN_LABELS[opts.origin];
+  const origins: string[] | null = originLabels
+    ? await resolveOriginValues(originLabels)
+    : null;
 
   const { farmerSquads: FARMER_SQUADS } = await getTeamConfig();
   const ALL_FARMER_EMAILS = new Set(FARMER_SQUADS.flatMap((s) => s.members.map((m) => m.email.toLowerCase())));

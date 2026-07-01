@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
+import type { ReactNode } from "react";
 
 interface BarEntry { name: string; value: number; }
 
@@ -14,6 +15,7 @@ interface TeamBarChartProps {
   color: string;
   format?: "brl" | "number";
   metric: string;
+  headerRight?: ReactNode;
 }
 
 function shortName(name: string) {
@@ -22,12 +24,13 @@ function shortName(name: string) {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 }
 
-export default function TeamBarChart({ title, subtitle, data, color, format, metric }: TeamBarChartProps) {
+export default function TeamBarChart({ title, subtitle, data, color, format, metric, headerRight }: TeamBarChartProps) {
   const fmt = format === "brl"
     ? (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}`
     : (v: number) => String(v);
   const sorted = [...data].sort((a, b) => b.value - a.value);
   const max = Math.max(...sorted.map((d) => d.value), 1);
+  const total = sorted.reduce((s, d) => s + d.value, 0);
 
   return (
     <div className="card">
@@ -36,10 +39,13 @@ export default function TeamBarChart({ title, subtitle, data, color, format, met
           <div className="title">{title}</div>
           {subtitle && <div className="cap">{subtitle}</div>}
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)" }}>{metric}</div>
-          <div style={{ fontFamily: "var(--font-psa), var(--font-mono)", fontSize: 28, fontWeight: 800, color }}>
-            {fmt(sorted.reduce((s, d) => s + d.value, 0))}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+          {headerRight && <div>{headerRight}</div>}
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)" }}>{metric}</div>
+            <div style={{ fontFamily: "var(--font-psa), var(--font-mono)", fontSize: 28, fontWeight: 800, color }}>
+              {fmt(total)}
+            </div>
           </div>
         </div>
       </div>
@@ -51,20 +57,24 @@ export default function TeamBarChart({ title, subtitle, data, color, format, met
           margin={{ top: 0, right: 60, left: 0, bottom: 0 }}
         >
           <CartesianGrid horizontal={false} stroke="var(--border-soft)" />
-          <XAxis
-            type="number" domain={[0, max]} hide
-          />
+          <XAxis type="number" domain={[0, max]} hide />
           <YAxis
             type="category" dataKey="name" width={130}
             tick={{ fill: "var(--muted)", fontSize: 12, fontFamily: "var(--font-sans)" }}
             axisLine={false} tickLine={false}
           />
           <Tooltip
-            cursor={{ fill: "var(--accent-soft)" }}
+            cursor={{ fill: "rgba(255,255,255,0.04)" }}
             contentStyle={{
-              background: "var(--panel-2)", border: "1px solid var(--border)",
-              borderRadius: 10, fontSize: 12, color: "var(--text)",
+              background: "#0d0f14",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 10,
+              fontSize: 13,
+              color: "#ffffff",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.65)",
             }}
+            labelStyle={{ color: "#ffffff", fontWeight: 700, marginBottom: 6 }}
+            itemStyle={{ color: "rgba(255,255,255,0.85)" }}
             formatter={(v) => [fmt(Number(v ?? 0)), metric]}
           />
           <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={28}>

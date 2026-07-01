@@ -198,29 +198,16 @@ export default async function InicioPage({
             <TabBar tabs={SQUAD_TABS} activeKey={squad}
               buildHref={(key) => buildFarmerHref({ squad: key })} sub />
 
-            {/* Controles: Origem + Bruto/Líquido */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Origem</span>
-                <div className="seg">
-                  {ORIGIN_TABS.map((t) => (
-                    <Link key={t.key} href={buildFarmerHref({ origin: t.key })}
-                      className={`seg-item${origin === t.key ? " active" : ""}`}>
-                      {t.label}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Receita</span>
-                <div className="seg">
-                  {VALOR_TABS.map((t) => (
-                    <Link key={t.key} href={buildFarmerHref({ valor: t.key })}
-                      className={`seg-item${valor === t.key ? " active" : ""}`}>
-                      {t.label}
-                    </Link>
-                  ))}
-                </div>
+            {/* Controle: Origem */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 24 }}>
+              <span style={{ fontSize: 11, color: "var(--text-3)", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Origem</span>
+              <div className="seg">
+                {ORIGIN_TABS.map((t) => (
+                  <Link key={t.key} href={buildFarmerHref({ origin: t.key })}
+                    className={`seg-item${origin === t.key ? " active" : ""}`}>
+                    {t.label}
+                  </Link>
+                ))}
               </div>
             </div>
 
@@ -250,6 +237,16 @@ export default async function InicioPage({
                   color="var(--green)"
                   format="brl"
                   metric={valor === "liquido" ? "Receita liquida" : "Receita bruta"}
+                  headerRight={
+                    <div className="seg">
+                      {VALOR_TABS.map((t) => (
+                        <Link key={t.key} href={buildFarmerHref({ valor: t.key })}
+                          className={`seg-item${valor === t.key ? " active sub" : ""}`}>
+                          {t.label}
+                        </Link>
+                      ))}
+                    </div>
+                  }
                 />
                 <TeamBarChart
                   title="Tramitacoes em Andamento"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface Member { name: string; email: string; }
 interface Squad  { id: string; label: string; members: Member[]; }
@@ -34,7 +35,10 @@ function AddOwnerForm({
   const [focused,  setFocused]  = useState(false);
   const [selected, setSelected] = useState<HsOwner | null>(null);
   const [dropPos,  setDropPos]  = useState<{ top: number; left: number; width: number } | null>(null);
+  const [mounted,  setMounted]  = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const available = owners.filter((o) => !existingEmails.has(o.email));
   const filtered  = query.length > 0
@@ -78,7 +82,7 @@ function AddOwnerForm({
   return (
     <form onSubmit={submit} style={{ padding: "12px 14px", background: "var(--s2)", borderTop: "1px solid var(--border-soft)" }}>
       <div style={{ display: "flex", gap: 8 }}>
-        <div style={{ flex: 1, position: "relative" }}>
+        <div style={{ flex: 1 }}>
           <input
             ref={inputRef}
             className="finp"
@@ -91,48 +95,6 @@ function AddOwnerForm({
             style={{ width: "100%", fontSize: 13, padding: "9px 12px" }}
             autoComplete="off"
           />
-
-          {/* Dropdown via position:fixed para escapar do overflow:hidden do card pai */}
-          {showDropdown && dropPos && (
-            <div style={{
-              position: "fixed",
-              top: dropPos.top,
-              left: dropPos.left,
-              width: dropPos.width,
-              zIndex: 9999,
-              background: "var(--s1)", border: "1px solid var(--border)",
-              borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.7)",
-              maxHeight: 280, overflowY: "auto",
-            }}>
-              {noResults ? (
-                <div style={{ padding: "14px 16px", fontSize: 12, color: "var(--text-3)", textAlign: "center" }}>
-                  Nenhum resultado para <strong style={{ color: "var(--text-2)" }}>{query}</strong>
-                </div>
-              ) : (
-                filtered.map((o) => (
-                  <button
-                    key={o.email}
-                    type="button"
-                    onMouseDown={() => pick(o)}
-                    style={{
-                      width: "100%", textAlign: "left", background: "none", border: "none",
-                      padding: "10px 14px", cursor: "pointer", display: "flex", gap: 11,
-                      alignItems: "center", borderBottom: "1px solid var(--border-soft)",
-                      transition: "background .1s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--s2)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                  >
-                    <span className="av" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(o.name)}</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{o.email}</div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
         </div>
 
         <button
@@ -149,6 +111,49 @@ function AddOwnerForm({
         <div style={{ marginTop: 8, fontSize: 11, color: "var(--red)" }}>
           Nao foi possivel carregar os colaboradores do HubSpot. Verifique se o token esta correto.
         </div>
+      )}
+
+      {/* Portal: renderiza fora de qualquer overflow:hidden ou backdrop-filter */}
+      {mounted && showDropdown && dropPos && createPortal(
+        <div style={{
+          position: "fixed",
+          top: dropPos.top,
+          left: dropPos.left,
+          width: dropPos.width,
+          zIndex: 9999,
+          background: "var(--s1)", border: "1px solid var(--border)",
+          borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.75)",
+          maxHeight: 280, overflowY: "auto",
+        }}>
+          {noResults ? (
+            <div style={{ padding: "14px 16px", fontSize: 12, color: "var(--text-3)", textAlign: "center" }}>
+              Nenhum resultado para <strong style={{ color: "var(--text-2)" }}>{query}</strong>
+            </div>
+          ) : (
+            filtered.map((o) => (
+              <button
+                key={o.email}
+                type="button"
+                onMouseDown={() => pick(o)}
+                style={{
+                  width: "100%", textAlign: "left", background: "none", border: "none",
+                  padding: "10px 14px", cursor: "pointer", display: "flex", gap: 11,
+                  alignItems: "center", borderBottom: "1px solid var(--border-soft)",
+                  transition: "background .1s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--s2)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+              >
+                <span className="av" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(o.name)}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{o.email}</div>
+                </div>
+              </button>
+            ))
+          )}
+        </div>,
+        document.body
       )}
     </form>
   );

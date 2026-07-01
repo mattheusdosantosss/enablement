@@ -6,10 +6,19 @@ import type { ProfRow } from "@/components/ProfessionalTable";
 const PROP_REVENUE = process.env.HUBSPOT_B2C_PROP_REVENUE ?? "amount";
 const PROP_PRODUCT = process.env.HUBSPOT_B2C_PROP_PRODUCT ?? "dealname";
 
-function monthRange() {
+function monthRange(mes?: string) {
+  let year: number, month: number;
+  if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+    [year, month] = mes.split("-").map(Number);
+    month -= 1;
+  } else {
+    const n = new Date(); year = n.getFullYear(); month = n.getMonth();
+  }
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { start: start.getTime(), end: Date.now() };
+  const isCurrent = year === now.getFullYear() && month === now.getMonth();
+  const start = new Date(year, month, 1).getTime();
+  const end   = isCurrent ? Date.now() : new Date(year, month + 1, 0, 23, 59, 59, 999).getTime();
+  return { start, end };
 }
 
 export interface B2CData {
@@ -29,14 +38,14 @@ async function resolveOwnerIds(emails: string[]): Promise<Map<string, string>> {
   return map;
 }
 
-export async function getB2CData(): Promise<B2CData> {
+export async function getB2CData(opts?: { mes?: string }): Promise<B2CData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_B2C;
 
   const { b2c: B2C_TEAM } = await getTeamConfig();
   const emails = B2C_TEAM.map((m) => m.email);
   const emailToOwner = await resolveOwnerIds(emails);
 
-  const { start, end } = monthRange();
+  const { start, end } = monthRange(opts?.mes);
 
   // Build per-member rows
   const rows: ProfRow[] = [];

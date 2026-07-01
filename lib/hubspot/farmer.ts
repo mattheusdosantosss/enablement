@@ -21,16 +21,27 @@ const ORIGIN_VALUES: Record<FarmerOrigin, string[]> = {
 
 export interface FarmerOptions {
   origin?: FarmerOrigin;
+  mes?: string; // YYYY-MM; omitir = mês atual
 }
 
 // Ajuste fuso BRT (UTC-3) para campos datetime
 const BR_OFFSET_MS = 3 * 60 * 60 * 1000;
 
-function monthRange() {
+function monthRange(mes?: string) {
+  let year: number, month: number;
+  if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+    [year, month] = mes.split("-").map(Number);
+    month -= 1;
+  } else {
+    const n = new Date(); year = n.getFullYear(); month = n.getMonth();
+  }
   const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-  const yyyymmdd = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: yyyymmdd(firstDay), to: yyyymmdd(now) };
+  const isCurrent = year === now.getFullYear() && month === now.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay  = isCurrent ? now : new Date(year, month + 1, 0);
+  const yyyymmdd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { from: yyyymmdd(firstDay), to: yyyymmdd(lastDay) };
 }
 
 const utcStart = (d: string) => new Date(d).getTime();
@@ -86,12 +97,13 @@ async function resolveCsStages(): Promise<{ abertos: string[] }> {
 }
 
 // ── Fetch deals de demandas levantadas (por data de qualificação) ──────────────
-async function fetchRaisedDeals(ownerIds: string[], from: string, to: string, origins: string[]) {
+async function fetchRaisedDeals(ownerIds: string[], from: string, to: string, origins: string[] | null) {
+  const originFilter = origins ? [{ propertyName: "origem_do_lead", operator: "IN", values: origins }] : [];
   const body = {
     filterGroups: [{
       filters: [
         { propertyName: "pipedrive___data_de_qualificacao", operator: "HAS_PROPERTY" },
-        { propertyName: "origem_do_lead", operator: "IN", values: origins },
+        ...originFilter,
         { propertyName: "sdrfarmer_responsavel", operator: "IN", values: ownerIds.slice(0, 100) },
         { propertyName: "pipedrive___data_de_qualificacao", operator: "GTE", value: String(utcStart(from)) },
         { propertyName: "pipedrive___data_de_qualificacao", operator: "LTE", value: String(utcEnd(to)) },
@@ -114,11 +126,12 @@ async function fetchRaisedDeals(ownerIds: string[], from: string, to: string, or
 }
 
 // ── Fetch deals ganhos no mês (por closedate) ──────────────────────────────────
-async function fetchConvertedDeals(ownerIds: string[], from: string, to: string, origins: string[]) {
+async function fetchConvertedDeals(ownerIds: string[], from: string, to: string, origins: string[] | null) {
+  const originFilter = origins ? [{ propertyName: "origem_do_lead", operator: "IN", values: origins }] : [];
   const body = {
     filterGroups: [{
       filters: [
-        { propertyName: "origem_do_lead", operator: "IN", values: origins },
+        ...originFilter,
         { propertyName: "sdrfarmer_responsavel", operator: "IN", values: ownerIds.slice(0, 100) },
         { propertyName: "dealstage", operator: "IN", values: GANHO_STAGES },
         { propertyName: "closedate", operator: "GTE", value: String(brtStart(from)) },
@@ -185,12 +198,15 @@ async function fetchMeetings(ownerIds: string[], from: string, to: string) {
 export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
   if (!process.env.HUBSPOT_TOKEN) return SEED_FARMER;
 
-  const origins = ORIGIN_VALUES[opts?.origin ?? "ambas"];
+  // null = não filtra por origem (Ambas), string[] = filtra pelos valores específicos
+  const origins: string[] | null = (!opts?.origin || opts.origin === "ambas")
+    ? null
+    : ORIGIN_VALUES[opts.origin];
 
   const { farmerSquads: FARMER_SQUADS } = await getTeamConfig();
   const ALL_FARMER_EMAILS = new Set(FARMER_SQUADS.flatMap((s) => s.members.map((m) => m.email.toLowerCase())));
 
-  const { from, to } = monthRange();
+  const { from, to } = monthRange(opts?.mes);
 
   const [emailToOwner, csStages] = await Promise.all([
     resolveOwnerIds(ALL_FARMER_EMAILS).catch(() => new Map<string, string>()),
@@ -200,9 +216,11 @@ export async function getFarmerData(opts?: FarmerOptions): Promise<FarmerData> {
   const allOwnerIds = Array.from(emailToOwner.values());
   if (!allOwnerIds.length) return SEED_FARMER;
 
+  type DealResult = { properties: Record<string, string> };
+
   const [raised, converted, tickets, meetings] = await Promise.all([
-    fetchRaisedDeals(allOwnerIds, from, to, origins).catch(() => []),
-    fetchConvertedDeals(allOwnerIds, from, to, origins).catch(() => []),
+    fetchRaisedDeals(allOwnerIds, from, to, origins).catch(() => [] as DealResult[]),
+    fetchConvertedDeals(allOwnerIds, from, to, origins).catch(() => [] as DealResult[]),
     fetchCsInProgress(allOwnerIds, csStages.abertos).catch(() => []),
     fetchMeetings(allOwnerIds, from, to).catch(() => []),
   ]);

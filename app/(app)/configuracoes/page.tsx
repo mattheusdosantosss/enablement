@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 interface Member { name: string; email: string; }
 interface Squad  { id: string; label: string; members: Member[]; }
@@ -33,6 +33,8 @@ function AddOwnerForm({
   const [query,    setQuery]    = useState("");
   const [focused,  setFocused]  = useState(false);
   const [selected, setSelected] = useState<HsOwner | null>(null);
+  const [dropPos,  setDropPos]  = useState<{ top: number; left: number; width: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const available = owners.filter((o) => !existingEmails.has(o.email));
   const filtered  = query.length > 0
@@ -42,8 +44,16 @@ function AddOwnerForm({
       ).slice(0, 10)
     : available.slice(0, 10);
 
-  const showDropdown = focused && (query.length > 0 || available.length > 0);
-  const noResults    = query.length > 0 && filtered.length === 0 && !ownersLoading;
+  const showDropdown = focused && !ownersLoading && (query.length > 0 || available.length > 0);
+  const noResults    = query.length > 0 && filtered.length === 0;
+
+  function openDropdown() {
+    if (inputRef.current) {
+      const r = inputRef.current.getBoundingClientRect();
+      setDropPos({ top: r.bottom + 4, left: r.left, width: r.width });
+    }
+    setFocused(true);
+  }
 
   function pick(o: HsOwner) {
     setSelected(o);
@@ -70,10 +80,11 @@ function AddOwnerForm({
       <div style={{ display: "flex", gap: 8 }}>
         <div style={{ flex: 1, position: "relative" }}>
           <input
+            ref={inputRef}
             className="finp"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setSelected(null); }}
-            onFocus={() => setFocused(true)}
+            onFocus={openDropdown}
             onBlur={() => setTimeout(() => setFocused(false), 200)}
             placeholder={inputPlaceholder}
             disabled={ownersLoading || ownersError}
@@ -81,12 +92,16 @@ function AddOwnerForm({
             autoComplete="off"
           />
 
-          {/* Dropdown */}
-          {showDropdown && !ownersLoading && (
+          {/* Dropdown via position:fixed para escapar do overflow:hidden do card pai */}
+          {showDropdown && dropPos && (
             <div style={{
-              position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 100,
+              position: "fixed",
+              top: dropPos.top,
+              left: dropPos.left,
+              width: dropPos.width,
+              zIndex: 9999,
               background: "var(--s1)", border: "1px solid var(--border)",
-              borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
+              borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.7)",
               maxHeight: 280, overflowY: "auto",
             }}>
               {noResults ? (

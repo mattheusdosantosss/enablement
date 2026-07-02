@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 const NAV = [
   {
     href: "/inicio",
-    label: "Inicio",
+    label: "Início",
     icon: (
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -37,7 +37,7 @@ const NAV = [
   },
   {
     href: "/configuracoes",
-    label: "Configuracoes",
+    label: "Configurações",
     icon: (
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3"/>

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = lerSessao(cookies().get(COOKIE)?.value);
-  if (!user) return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   if (!process.env.HUBSPOT_TOKEN) {
     return NextResponse.json({ owners: [] });

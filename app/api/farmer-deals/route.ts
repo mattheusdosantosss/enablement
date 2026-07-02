@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const user = lerSessao(cookies().get(COOKIE)?.value);
-  if (!user) return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const sp      = req.nextUrl.searchParams;
   const ownerId = sp.get("ownerId") ?? "";

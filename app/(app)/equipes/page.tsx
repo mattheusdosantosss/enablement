@@ -121,7 +121,7 @@ export default async function EquipesPage({
           Equipes
         </h2>
         <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-          Historico de feedbacks e mentorias por membro
+          Histórico de feedbacks e mentorias por membro
         </p>
       </div>
 

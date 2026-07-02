@@ -32,7 +32,7 @@ export interface FeedbackEntry {
 
 export async function GET(req: Request) {
   const user = lerSessao(cookies().get(COOKIE)?.value);
-  if (!user) return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const redis = getRedis();
   if (!redis) return NextResponse.json({ items: [] });
@@ -60,33 +60,33 @@ const TEAM_LABEL: Record<string, string> = {
 
 export async function POST(req: Request) {
   const user = lerSessao(cookies().get(COOKIE)?.value);
-  if (!user) return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any;
   try { body = await req.json(); } catch {
-    return NextResponse.json({ error: "Corpo invalido." }, { status: 400 });
+    return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
   }
 
   const { team, memberName, memberEmail, carga, gestao, objetivo, tipo, nota, text } = body ?? {};
   if (!team || !memberName || !text?.trim()) {
-    return NextResponse.json({ error: "Campos obrigatorios faltando." }, { status: 400 });
+    return NextResponse.json({ error: "Campos obrigatórios faltando." }, { status: 400 });
   }
 
   const managerEmail = MANAGERS[String(team).toLowerCase()];
   if (!managerEmail) {
-    return NextResponse.json({ error: `Time "${team}" nao reconhecido.` }, { status: 400 });
+    return NextResponse.json({ error: `Time "${team}" não reconhecido.` }, { status: 400 });
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const label  = TEAM_LABEL[team] ?? team;
 
   const extraRows = [
-    tipo     ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Tipo de Sessao</td><td style="color:#f0f0f4">${tipo}</td></tr>` : "",
-    carga    ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Carga Horaria</td><td style="color:#f0f0f4">${carga}</td></tr>` : "",
-    gestao   ? `<tr><td style="padding:6px 0;color:#a4a4b2">Gestao</td><td style="color:#f0f0f4">${gestao}</td></tr>` : "",
+    tipo     ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Tipo de Sessão</td><td style="color:#f0f0f4">${tipo}</td></tr>` : "",
+    carga    ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Carga Horária</td><td style="color:#f0f0f4">${carga}</td></tr>` : "",
+    gestao   ? `<tr><td style="padding:6px 0;color:#a4a4b2">Gestão</td><td style="color:#f0f0f4">${gestao}</td></tr>` : "",
     objetivo ? `<tr><td style="padding:6px 0;color:#a4a4b2">Objetivo do Treinamento</td><td style="color:#f0f0f4">${objetivo}</td></tr>` : "",
-    nota     ? `<tr><td style="padding:6px 0;color:#a4a4b2">Avaliacao</td><td style="color:#f0f0f4">${"★".repeat(Number(nota))}${"☆".repeat(5 - Number(nota))} (${nota}/5)</td></tr>` : "",
+    nota     ? `<tr><td style="padding:6px 0;color:#a4a4b2">Avaliação</td><td style="color:#f0f0f4">${"★".repeat(Number(nota))}${"☆".repeat(5 - Number(nota))} (${nota}/5)</td></tr>` : "",
   ].join("");
 
   const { error } = await resend.emails.send({

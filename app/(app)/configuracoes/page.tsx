@@ -115,7 +115,7 @@ function AddOwnerForm({
 
       {ownersError && (
         <div style={{ marginTop: 8, fontSize: 11, color: "var(--red)" }}>
-          Nao foi possivel carregar os colaboradores do HubSpot. Verifique se o token esta correto.
+          Não foi possível carregar os colaboradores do HubSpot. Verifique se o token está correto.
         </div>
       )}
 
@@ -358,7 +358,7 @@ export default function ConfiguracoesPage() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 28 }}>
         <div>
           <h2 style={{ fontFamily: "var(--font-psa), var(--font-sans)", fontSize: 22, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", margin: 0, color: "var(--text)" }}>
-            Configuracoes
+            Configurações
           </h2>
           <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
             Gerencie os membros de cada equipe comercial

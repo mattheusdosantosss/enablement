@@ -18,6 +18,14 @@ const TEAMS = [
   },
 ];
 
+const TIPO_OPTIONS = [
+  "Mentoria 1:1",
+  "Coaching",
+  "Shadowing",
+  "Feedback formal",
+  "Check-in de performance",
+  "Treinamento em grupo",
+];
 const CARGA_OPTIONS = ["30 min", "45 min", "1h", "1h30", "2h"];
 const GESTAO_OPTIONS = [
   "Nicollas Blanco Lenuzza",
@@ -78,9 +86,17 @@ function HistoryItem({ item }: { item: FeedbackEntry }) {
         </div>
       </div>
 
-      {/* Chips: carga + objetivo */}
-      {(item.carga || item.objetivo) && (
+      {/* Chips: tipo + carga + objetivo + nota */}
+      {(item.tipo || item.carga || item.objetivo || item.nota) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          {item.tipo && (
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: "var(--orange)", background: "rgba(255,106,26,0.12)",
+              border: "1px solid rgba(255,106,26,0.22)", borderRadius: 6, padding: "2px 9px",
+            }}>
+              {item.tipo}
+            </span>
+          )}
           {item.carga && (
             <span style={{
               fontSize: 11, color: "var(--text-2)", background: "var(--s3)",
@@ -96,6 +112,14 @@ function HistoryItem({ item }: { item: FeedbackEntry }) {
               maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }} title={item.objetivo}>
               {item.objetivo}
+            </span>
+          )}
+          {item.nota && (
+            <span style={{
+              fontSize: 12, color: "#f5c518", letterSpacing: 1,
+              background: "var(--s3)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 9px",
+            }}>
+              {"★".repeat(item.nota)}{"☆".repeat(5 - item.nota)}
             </span>
           )}
         </div>
@@ -131,9 +155,11 @@ function HistoryItem({ item }: { item: FeedbackEntry }) {
 export default function FeedbackPage() {
   const [team,        setTeam]        = useState("");
   const [memberEmail, setMemberEmail] = useState("");
+  const [tipo,        setTipo]        = useState("");
   const [carga,       setCarga]       = useState("");
   const [gestao,      setGestao]      = useState("");
   const [objetivo,    setObjetivo]    = useState("");
+  const [nota,        setNota]        = useState(0);
   const [text,        setText]        = useState("");
   const [status,      setStatus]      = useState<Status>("idle");
   const [errMsg,      setErrMsg]      = useState("");
@@ -163,12 +189,13 @@ export default function FeedbackPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           team, memberName: selectedMember?.name ?? memberEmail,
-          memberEmail, carga, gestao, objetivo, text,
+          memberEmail, tipo: tipo || null, carga, gestao, objetivo,
+          nota: nota > 0 ? nota : null, text,
         }),
       });
       if (res.ok) {
         setStatus("ok");
-        setTeam(""); setMemberEmail(""); setCarga(""); setGestao(""); setObjetivo(""); setText("");
+        setTeam(""); setMemberEmail(""); setTipo(""); setCarga(""); setGestao(""); setObjetivo(""); setNota(0); setText("");
         fetchHistory();
       } else {
         const d = await res.json().catch(() => ({}));
@@ -220,7 +247,14 @@ export default function FeedbackPage() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="flab">Tipo de Sessao</label>
+              <select className="finp" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+                <option value="">Selecione...</option>
+                {TIPO_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label className="flab">Carga Horaria</label>
               <select className="finp" value={carga} onChange={(e) => setCarga(e.target.value)}>
@@ -241,6 +275,34 @@ export default function FeedbackPage() {
             <label className="flab">Objetivo do Treinamento</label>
             <input className="finp" value={objetivo} onChange={(e) => setObjetivo(e.target.value)}
               placeholder="Descreva o objetivo do treinamento realizado..." style={{ fontSize: 13 }} />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <label className="flab">Avaliacao do Colaborador</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setNota(nota === n ? 0 : n)}
+                  style={{
+                    width: 38, height: 38,
+                    background: nota >= n ? "rgba(255,106,26,0.15)" : "var(--s3)",
+                    border: `1px solid ${nota >= n ? "var(--orange)" : "var(--border)"}`,
+                    borderRadius: 8, cursor: "pointer",
+                    color: nota >= n ? "var(--orange)" : "var(--muted)",
+                    fontSize: 20, lineHeight: 1, transition: "all 0.12s",
+                  }}
+                >
+                  ★
+                </button>
+              ))}
+              {nota > 0 && (
+                <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: 4 }}>
+                  {nota}/5
+                </span>
+              )}
+            </div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

@@ -63,20 +63,25 @@ export default async function EquipesPage({
 
   // Agrega feedbacks por membro
   const statsMap = new Map<string, {
-    count: number; totalMin: number; gestao: string | null;
+    count: number; totalMin: number; gestao: string | null; tipoRecente: string | null;
     objetivo: string | null; lastSentAt: string | null; allObjetivos: string[];
+    notas: number[]; feedbacks: FeedbackEntry[];
   }>();
 
   for (const f of teamFeedbacks) {
     const key = (f.memberEmail || f.memberName).toLowerCase();
     const e = statsMap.get(key) ?? {
-      count: 0, totalMin: 0, gestao: null, objetivo: null, lastSentAt: null, allObjetivos: [],
+      count: 0, totalMin: 0, gestao: null, tipoRecente: null,
+      objetivo: null, lastSentAt: null, allObjetivos: [], notas: [], feedbacks: [],
     };
     e.count++;
     e.totalMin += cargaMin(f.carga);
+    e.feedbacks.push(f);
+    if (f.nota != null) e.notas.push(f.nota);
     if (!e.lastSentAt || f.sentAt > e.lastSentAt) {
       e.lastSentAt = f.sentAt;
       e.gestao = f.gestao;
+      e.tipoRecente = f.tipo ?? null;
     }
     if (f.objetivo && !e.allObjetivos.includes(f.objetivo)) {
       e.allObjetivos.push(f.objetivo);
@@ -88,8 +93,12 @@ export default async function EquipesPage({
     const s =
       statsMap.get(m.email.toLowerCase()) ??
       statsMap.get(m.name.toLowerCase()) ?? {
-        count: 0, totalMin: 0, gestao: null, objetivo: null, lastSentAt: null, allObjetivos: [],
+        count: 0, totalMin: 0, gestao: null, tipoRecente: null,
+        objetivo: null, lastSentAt: null, allObjetivos: [], notas: [], feedbacks: [],
       };
+    const notaMedia = s.notas.length > 0
+      ? s.notas.reduce((a, b) => a + b, 0) / s.notas.length
+      : null;
     return {
       name: m.name,
       email: m.email,
@@ -98,6 +107,9 @@ export default async function EquipesPage({
       totalMin: s.totalMin,
       gestao: s.gestao,
       allObjetivos: s.allObjetivos,
+      tipoRecente: s.tipoRecente,
+      notaMedia,
+      feedbacks: s.feedbacks,
     };
   });
 

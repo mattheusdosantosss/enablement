@@ -24,6 +24,8 @@ export interface FeedbackEntry {
   carga: string | null;
   gestao: string | null;
   objetivo: string | null;
+  tipo: string | null;
+  nota: number | null;
   text: string;
   sentBy: string;
 }
@@ -66,7 +68,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Corpo invalido." }, { status: 400 });
   }
 
-  const { team, memberName, memberEmail, carga, gestao, objetivo, text } = body ?? {};
+  const { team, memberName, memberEmail, carga, gestao, objetivo, tipo, nota, text } = body ?? {};
   if (!team || !memberName || !text?.trim()) {
     return NextResponse.json({ error: "Campos obrigatorios faltando." }, { status: 400 });
   }
@@ -80,9 +82,11 @@ export async function POST(req: Request) {
   const label  = TEAM_LABEL[team] ?? team;
 
   const extraRows = [
+    tipo     ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Tipo de Sessao</td><td style="color:#f0f0f4">${tipo}</td></tr>` : "",
     carga    ? `<tr><td style="padding:6px 0;color:#a4a4b2;width:160px">Carga Horaria</td><td style="color:#f0f0f4">${carga}</td></tr>` : "",
     gestao   ? `<tr><td style="padding:6px 0;color:#a4a4b2">Gestao</td><td style="color:#f0f0f4">${gestao}</td></tr>` : "",
     objetivo ? `<tr><td style="padding:6px 0;color:#a4a4b2">Objetivo do Treinamento</td><td style="color:#f0f0f4">${objetivo}</td></tr>` : "",
+    nota     ? `<tr><td style="padding:6px 0;color:#a4a4b2">Avaliacao</td><td style="color:#f0f0f4">${"★".repeat(Number(nota))}${"☆".repeat(5 - Number(nota))} (${nota}/5)</td></tr>` : "",
   ].join("");
 
   const { error } = await resend.emails.send({
@@ -130,6 +134,8 @@ export async function POST(req: Request) {
         carga: carga || null,
         gestao: gestao || null,
         objetivo: objetivo || null,
+        tipo: tipo || null,
+        nota: nota ? Number(nota) : null,
         text,
         sentBy: user.email,
       };

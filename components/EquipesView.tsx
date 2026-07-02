@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import type { FeedbackEntry } from "@/app/api/feedback/route";
 
 export interface MemberStats {
   name: string;
@@ -10,6 +11,9 @@ export interface MemberStats {
   totalMin: number;
   gestao: string | null;
   allObjetivos: string[];
+  tipoRecente: string | null;
+  notaMedia: number | null;
+  feedbacks: FeedbackEntry[];
 }
 
 type ViewMode = "cards" | "list";
@@ -27,6 +31,23 @@ function fmtMin(m: number): string {
   return `${h}h ${min}min`;
 }
 
+function fmtDate(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })
+      + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
+
+function StarRating({ nota }: { nota: number }) {
+  return (
+    <span style={{ fontSize: 13, color: "#f5c518", letterSpacing: 1 }}>
+      {"★".repeat(nota)}
+      <span style={{ color: "rgba(255,255,255,0.2)" }}>{"★".repeat(5 - nota)}</span>
+    </span>
+  );
+}
+
 function Tag({ label }: { label: string }) {
   return (
     <span style={{
@@ -40,19 +61,153 @@ function Tag({ label }: { label: string }) {
   );
 }
 
+/* ── Modal de histórico do membro ─────────────────────────────────────────── */
+function MemberFeedbackModal({ member, onClose }: { member: MemberStats; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}>
+      <div
+        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
+        onClick={onClose}
+      />
+      <div style={{
+        position: "relative", zIndex: 1, width: "100%", maxWidth: 560,
+        maxHeight: "82vh", display: "flex", flexDirection: "column",
+        background: "#0d0f14", borderRadius: 16,
+        border: "1px solid rgba(255,255,255,0.1)",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.7)",
+      }}>
+        {/* Cabeçalho */}
+        <div style={{ padding: "20px 22px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="av" style={{ width: 40, height: 40, fontSize: 12 }}>
+                {initials(member.name)}
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#ffffff" }}>{member.name}</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>
+                  {member.count} feedback{member.count !== 1 ? "s" : ""}
+                  {member.totalMin > 0 && ` · ${fmtMin(member.totalMin)}`}
+                  {member.notaMedia != null && ` · Nota média ${member.notaMedia.toFixed(1)}`}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: 8, cursor: "pointer", color: "rgba(255,255,255,0.6)",
+                fontSize: 18, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {/* Lista de feedbacks */}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {member.feedbacks.length === 0 ? (
+            <div style={{ padding: "48px 22px", textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: 13 }}>
+              Nenhum feedback registrado.
+            </div>
+          ) : (
+            member.feedbacks.map((f, i) => (
+              <div key={f.id} style={{
+                padding: "16px 22px",
+                borderBottom: i < member.feedbacks.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
+              }}>
+                {/* Data + tipo + nota */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {f.tipo && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, color: "var(--orange)",
+                        background: "rgba(255,106,26,0.12)", border: "1px solid rgba(255,106,26,0.22)",
+                        borderRadius: 6, padding: "2px 9px",
+                      }}>
+                        {f.tipo}
+                      </span>
+                    )}
+                    {f.carga && (
+                      <span style={{
+                        fontSize: 11, color: "rgba(255,255,255,0.55)",
+                        background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 6, padding: "2px 9px",
+                      }}>
+                        {f.carga}
+                      </span>
+                    )}
+                    {f.nota && <StarRating nota={f.nota} />}
+                  </div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", flexShrink: 0 }}>
+                    {fmtDate(f.sentAt)}
+                  </div>
+                </div>
+
+                {/* Objetivo */}
+                {f.objetivo && (
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>
+                    <span style={{ color: "rgba(255,255,255,0.25)", marginRight: 6 }}>Objetivo:</span>
+                    {f.objetivo}
+                  </div>
+                )}
+
+                {/* Texto */}
+                <p style={{
+                  margin: 0, fontSize: 13, color: "rgba(255,255,255,0.75)",
+                  lineHeight: 1.65, whiteSpace: "pre-wrap",
+                }}>
+                  {f.text}
+                </p>
+
+                {/* Enviado por */}
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", marginTop: 8 }}>
+                  por {f.sentBy}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Card ──────────────────────────────────────────────────────────────────── */
-function MemberCard({ m }: { m: MemberStats }) {
+function MemberCard({ m, onClick }: { m: MemberStats; onClick: () => void }) {
   const hasFeedback = m.count > 0;
   return (
-    <div className="card" style={{ padding: "20px 22px" }}>
+    <div
+      className="card"
+      onClick={onClick}
+      style={{ padding: "20px 22px", cursor: "pointer", transition: "border-color 0.15s" }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--orange)")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "")}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <div className="av" style={{ width: 42, height: 42, fontSize: 13, flexShrink: 0 }}>
           {initials(m.name)}
         </div>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}>{m.name}</div>
           <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 2 }}>{m.team}</div>
         </div>
+        {m.notaMedia != null && (
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Nota</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#f5c518" }}>{m.notaMedia.toFixed(1)}</div>
+          </div>
+        )}
       </div>
 
       <div style={{ height: 1, background: "var(--border-soft)", marginBottom: 14 }} />
@@ -60,6 +215,7 @@ function MemberCard({ m }: { m: MemberStats }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         <CardRow label="Feedbacks realizados" value={String(m.count)} accent={hasFeedback} />
         <CardRow label="Mentoria técnica" value={fmtMin(m.totalMin)} />
+        {m.tipoRecente && <CardRow label="Tipo (último)" value={m.tipoRecente} />}
         {m.gestao && <CardRow label="Gestão" value={m.gestao} />}
         {m.allObjetivos.length > 0 && (
           <div>
@@ -78,6 +234,12 @@ function MemberCard({ m }: { m: MemberStats }) {
           Nenhum feedback registrado ainda.
         </div>
       )}
+
+      {hasFeedback && (
+        <div style={{ marginTop: 14, fontSize: 11, color: "var(--faint)", textAlign: "center" }}>
+          Clique para ver histórico completo
+        </div>
+      )}
     </div>
   );
 }
@@ -94,17 +256,19 @@ function CardRow({ label, value, accent }: { label: string; value: string; accen
 }
 
 /* ── List row ──────────────────────────────────────────────────────────────── */
-function MemberListRow({ m, i }: { m: MemberStats; i: number }) {
+function MemberListRow({ m, i, onClick }: { m: MemberStats; i: number; onClick: () => void }) {
   return (
     <div
+      onClick={onClick}
       style={{
         display: "grid",
-        gridTemplateColumns: "36px 1fr 80px 90px 1fr 1fr",
+        gridTemplateColumns: "36px 1fr 80px 90px 80px 1fr",
         alignItems: "center",
         gap: 16,
         padding: "12px 20px",
         borderBottom: "1px solid var(--border-soft)",
         background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+        cursor: "pointer",
       }}
       onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
       onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)")}
@@ -114,7 +278,9 @@ function MemberListRow({ m, i }: { m: MemberStats; i: number }) {
       </div>
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{m.name}</div>
-        <div style={{ fontSize: 11, color: "var(--faint)" }}>{m.email}</div>
+        <div style={{ fontSize: 11, color: "var(--faint)" }}>
+          {m.tipoRecente ?? m.email}
+        </div>
       </div>
       <div style={{ fontSize: 13, fontWeight: 700, color: m.count > 0 ? "var(--orange)" : "var(--muted)", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
         {m.count}
@@ -122,8 +288,8 @@ function MemberListRow({ m, i }: { m: MemberStats; i: number }) {
       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>
         {fmtMin(m.totalMin)}
       </div>
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>
-        {m.gestao ?? "—"}
+      <div style={{ fontSize: 13, color: m.notaMedia != null ? "#f5c518" : "var(--faint)", fontWeight: 600 }}>
+        {m.notaMedia != null ? `${m.notaMedia.toFixed(1)} ★` : "—"}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         {m.allObjetivos.length > 0
@@ -136,8 +302,9 @@ function MemberListRow({ m, i }: { m: MemberStats; i: number }) {
 
 /* ── Main ──────────────────────────────────────────────────────────────────── */
 export default function EquipesView({ members }: { members: MemberStats[] }) {
-  const [query, setQuery]     = useState("");
-  const [view, setView]       = useState<ViewMode>("cards");
+  const [query, setQuery]                   = useState("");
+  const [view, setView]                     = useState<ViewMode>("cards");
+  const [selectedMember, setSelectedMember] = useState<MemberStats | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -147,6 +314,10 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
 
   const totalFeedbacks = members.reduce((s, m) => s + m.count, 0);
   const totalCarga     = members.reduce((s, m) => s + m.totalMin, 0);
+  const membersComNota = members.filter((m) => m.notaMedia != null);
+  const mediaGeral     = membersComNota.length > 0
+    ? membersComNota.reduce((s, m) => s + (m.notaMedia ?? 0), 0) / membersComNota.length
+    : null;
 
   return (
     <>
@@ -156,16 +327,21 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
         padding: "14px 20px", background: "var(--s2)",
         borderRadius: 12, border: "1px solid var(--border)",
       }}>
-        <Kpi label="Membros"           value={String(members.length)}   color="var(--text)" />
+        <Kpi label="Membros"            value={String(members.length)}   color="var(--text)" />
         <Divider />
-        <Kpi label="Total de feedbacks" value={String(totalFeedbacks)}  color="var(--orange)" />
+        <Kpi label="Total de feedbacks" value={String(totalFeedbacks)}   color="var(--orange)" />
         <Divider />
-        <Kpi label="Carga total"        value={fmtMin(totalCarga)}      color="var(--text)" />
+        <Kpi label="Carga total"        value={fmtMin(totalCarga)}       color="var(--text)" />
+        {mediaGeral != null && (
+          <>
+            <Divider />
+            <Kpi label="Nota média"     value={`${mediaGeral.toFixed(1)} ★`} color="#f5c518" />
+          </>
+        )}
       </div>
 
       {/* Barra de controles */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        {/* Busca */}
         <div style={{ flex: 1, position: "relative" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
             style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--faint)", pointerEvents: "none" }}>
@@ -192,13 +368,11 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
           )}
         </div>
 
-        {/* Toggle visualização */}
         <div className="seg">
           <button
             onClick={() => setView("cards")}
             className={`seg-item${view === "cards" ? " active" : ""}`}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px" }}
-            title="Cards"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/>
@@ -210,7 +384,6 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
             onClick={() => setView("list")}
             className={`seg-item${view === "list" ? " active" : ""}`}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px" }}
-            title="Lista"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -220,7 +393,6 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
         </div>
       </div>
 
-      {/* Resultado da busca */}
       {query && (
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
           {filtered.length === 0
@@ -235,7 +407,9 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
           <div className="card"><div className="empty">Nenhum membro encontrado.</div></div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-            {filtered.map((m) => <MemberCard key={m.email} m={m} />)}
+            {filtered.map((m) => (
+              <MemberCard key={m.email} m={m} onClick={() => m.count > 0 && setSelectedMember(m)} />
+            ))}
           </div>
         )
       )}
@@ -246,23 +420,29 @@ export default function EquipesView({ members }: { members: MemberStats[] }) {
           <div className="card"><div className="empty">Nenhum membro encontrado.</div></div>
         ) : (
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-            {/* Cabeçalho */}
             <div style={{
               display: "grid",
-              gridTemplateColumns: "36px 1fr 80px 90px 1fr 1fr",
+              gridTemplateColumns: "36px 1fr 80px 90px 80px 1fr",
               gap: 16, padding: "10px 20px",
               borderBottom: "1px solid var(--border)",
               background: "var(--s2)",
             }}>
-              {["", "Colaborador", "Feedbacks", "Mentoria", "Gestão", "Tags"].map((h, i) => (
+              {["", "Colaborador", "Feedbacks", "Mentoria", "Nota", "Tags"].map((h, i) => (
                 <div key={i} style={{ fontSize: 10, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
                   {h}
                 </div>
               ))}
             </div>
-            {filtered.map((m, i) => <MemberListRow key={m.email} m={m} i={i} />)}
+            {filtered.map((m, i) => (
+              <MemberListRow key={m.email} m={m} i={i} onClick={() => m.count > 0 && setSelectedMember(m)} />
+            ))}
           </div>
         )
+      )}
+
+      {/* Modal drill-down */}
+      {selectedMember && (
+        <MemberFeedbackModal member={selectedMember} onClose={() => setSelectedMember(null)} />
       )}
     </>
   );

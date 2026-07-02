@@ -1,11 +1,10 @@
 import { Redis } from "@upstash/redis";
 import { getTeamConfig } from "@/lib/config";
 import type { FeedbackEntry } from "@/app/api/feedback/route";
+import EquipesView, { type MemberStats } from "@/components/EquipesView";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function getRedis(): Redis | null {
   const url   = process.env.KV_REST_API_URL   ?? process.env.UPSTASH_REDIS_REST_URL;
@@ -26,24 +25,10 @@ async function getFeedbacks(): Promise<FeedbackEntry[]> {
 }
 
 function cargaMin(c: string | null): number {
-  if (!c) return 0;
   const map: Record<string, number> = {
     "30 min": 30, "45 min": 45, "1h": 60, "1h30": 90, "2h": 120,
   };
-  return map[c] ?? 0;
-}
-
-function fmtMin(m: number): string {
-  if (m === 0) return "—";
-  const h = Math.floor(m / 60);
-  const min = m % 60;
-  if (h === 0) return `${min}min`;
-  if (min === 0) return `${h}h`;
-  return `${h}h ${min}min`;
-}
-
-function initials(name: string) {
-  return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
+  return c ? (map[c] ?? 0) : 0;
 }
 
 const TABS = [
@@ -52,7 +37,6 @@ const TABS = [
   { key: "farmers", label: "Farmers",      teamLabel: "Farmers" },
 ];
 
-// ── Page ───────────────────────────────────────────────────────────────────────
 export default async function EquipesPage({
   searchParams,
 }: {
@@ -66,60 +50,56 @@ export default async function EquipesPage({
     getFeedbacks(),
   ]);
 
-  // Monta lista de membros do tab ativo
-  const members: { name: string; email: string }[] =
+  const rawMembers: { name: string; email: string }[] =
     time === "b2b"
       ? config.b2b
       : time === "b2c"
       ? config.b2c
       : config.farmerSquads.flatMap((s) => s.members);
 
-  // Feedbacks deste time
   const teamFeedbacks = allFeedbacks.filter(
     (f) => f.team.toLowerCase() === activeTab.teamLabel.toLowerCase()
   );
 
-  // Agrega por membro (match por email, fallback por nome)
-  interface Stats {
-    count: number;
-    totalMin: number;
-    gestao: string | null;
-    objetivo: string | null;
-    lastSentAt: string | null;
-    allObjetivos: string[];
-  }
-
-  const statsByEmail = new Map<string, Stats>();
+  // Agrega feedbacks por membro
+  const statsMap = new Map<string, {
+    count: number; totalMin: number; gestao: string | null;
+    objetivo: string | null; lastSentAt: string | null; allObjetivos: string[];
+  }>();
 
   for (const f of teamFeedbacks) {
     const key = (f.memberEmail || f.memberName).toLowerCase();
-    const existing = statsByEmail.get(key) ?? {
+    const e = statsMap.get(key) ?? {
       count: 0, totalMin: 0, gestao: null, objetivo: null, lastSentAt: null, allObjetivos: [],
     };
-    existing.count++;
-    existing.totalMin += cargaMin(f.carga);
-    // Mantém info do mais recente
-    if (!existing.lastSentAt || f.sentAt > existing.lastSentAt) {
-      existing.lastSentAt = f.sentAt;
-      existing.gestao = f.gestao;
-      existing.objetivo = f.objetivo;
+    e.count++;
+    e.totalMin += cargaMin(f.carga);
+    if (!e.lastSentAt || f.sentAt > e.lastSentAt) {
+      e.lastSentAt = f.sentAt;
+      e.gestao = f.gestao;
     }
-    if (f.objetivo && !existing.allObjetivos.includes(f.objetivo)) {
-      existing.allObjetivos.push(f.objetivo);
+    if (f.objetivo && !e.allObjetivos.includes(f.objetivo)) {
+      e.allObjetivos.push(f.objetivo);
     }
-    statsByEmail.set(key, existing);
+    statsMap.set(key, e);
   }
 
-  function statsFor(m: { name: string; email: string }): Stats {
-    return (
-      statsByEmail.get(m.email.toLowerCase()) ??
-      statsByEmail.get(m.name.toLowerCase()) ?? {
+  const members: MemberStats[] = rawMembers.map((m) => {
+    const s =
+      statsMap.get(m.email.toLowerCase()) ??
+      statsMap.get(m.name.toLowerCase()) ?? {
         count: 0, totalMin: 0, gestao: null, objetivo: null, lastSentAt: null, allObjetivos: [],
-      }
-    );
-  }
-
-  const totalFeedbacks = members.reduce((s, m) => s + statsFor(m).count, 0);
+      };
+    return {
+      name: m.name,
+      email: m.email,
+      team: activeTab.teamLabel,
+      count: s.count,
+      totalMin: s.totalMin,
+      gestao: s.gestao,
+      allObjetivos: s.allObjetivos,
+    };
+  });
 
   return (
     <div>
@@ -143,102 +123,15 @@ export default async function EquipesPage({
         ))}
       </div>
 
-      {/* Resumo do time */}
-      <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 28, padding: "14px 20px", background: "var(--s2)", borderRadius: 12, border: "1px solid var(--border)" }}>
-        <div>
-          <div style={{ fontSize: 11, color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Membros</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "var(--text)", fontFamily: "var(--font-psa), var(--font-mono)" }}>{members.length}</div>
-        </div>
-        <div style={{ width: 1, height: 36, background: "var(--border)" }} />
-        <div>
-          <div style={{ fontSize: 11, color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Total de feedbacks</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "var(--orange)", fontFamily: "var(--font-psa), var(--font-mono)" }}>{totalFeedbacks}</div>
-        </div>
-        <div style={{ width: 1, height: 36, background: "var(--border)" }} />
-        <div>
-          <div style={{ fontSize: 11, color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Carga total</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: "var(--blue)", fontFamily: "var(--font-psa), var(--font-mono)" }}>
-            {fmtMin(members.reduce((s, m) => s + statsFor(m).totalMin, 0))}
+      {rawMembers.length === 0 ? (
+        <div className="card">
+          <div className="empty">
+            Nenhum membro configurado. Adicione membros em <strong>Configurações</strong>.
           </div>
         </div>
-      </div>
-
-      {/* Cards de membros */}
-      {members.length === 0 ? (
-        <div className="card">
-          <div className="empty">Nenhum membro configurado. Adicione membros em <strong>Configurações</strong>.</div>
-        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-          {members.map((m) => {
-            const s = statsFor(m);
-            const hasFeedback = s.count > 0;
-            return (
-              <div key={m.email} className="card" style={{ padding: "20px 22px" }}>
-                {/* Avatar + nome */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
-                  <div className="av" style={{ width: 42, height: 42, fontSize: 13, flexShrink: 0 }}>
-                    {initials(m.name)}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}>{m.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 2 }}>{activeTab.teamLabel}</div>
-                  </div>
-                </div>
-
-                {/* Separador */}
-                <div style={{ height: 1, background: "var(--border-soft)", marginBottom: 16 }} />
-
-                {/* Métricas */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <Row label="Feedbacks realizados"
-                    value={hasFeedback ? String(s.count) : "0"}
-                    accent={hasFeedback}
-                  />
-                  <Row label="Mentoria técnica" value={fmtMin(s.totalMin)} />
-                  {s.gestao && <Row label="Gestão" value={s.gestao} />}
-                  {s.allObjetivos.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        {s.allObjetivos.length === 1 ? "Tag" : "Tags"}
-                      </span>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {s.allObjetivos.map((tag) => (
-                          <span key={tag} style={{
-                            fontSize: 11, fontWeight: 600, padding: "3px 10px",
-                            background: "rgba(255,106,26,0.12)", color: "var(--orange)",
-                            borderRadius: 20, border: "1px solid rgba(255,106,26,0.25)",
-                          }}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Estado sem feedback */}
-                {!hasFeedback && (
-                  <div style={{ marginTop: 14, fontSize: 11, color: "var(--faint)", fontStyle: "italic" }}>
-                    Nenhum feedback registrado ainda.
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <EquipesView members={members} />
       )}
-    </div>
-  );
-}
-
-function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-      <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 700, color: accent ? "var(--orange)" : "var(--text)", fontVariantNumeric: "tabular-nums" }}>
-        {value}
-      </span>
     </div>
   );
 }

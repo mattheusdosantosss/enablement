@@ -17,40 +17,45 @@ const WON_STAGE_IDS: string[] = [
 ].filter(Boolean) as string[];
 
 /* ── date helpers ────────────────────────────────────────────────────────── */
-const pad       = (n: number) => String(n).padStart(2, "0");
-const toDateStr = (d: Date)   => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
+// closedate no HubSpot é datetime (epoch ms UTC).
+// Date.UTC() garante que o cálculo independe do timezone do servidor.
+// YYYY-MM-DD NÃO funciona de forma confiável no Search API para datetime —
+// o HubSpot interpreta como meia-noite UTC, cortando deals fechados durante o dia.
 interface PeriodRange {
-  startMs:   number;  // epoch ms — para hs_timestamp (reuniões, que não podem ser futuras)
-  endMs:     number;
-  startDate: string;  // YYYY-MM-DD — para closedate de negócios
-  endDate:   string;  // fim do PERÍODO COMPLETO (inclui datas futuras do mês/trimestre)
-  label:     string;
+  startMs:     number;  // epoch ms — hs_timestamp de reuniões (não pode ser futuro)
+  endMs:       number;  // epoch ms — agora
+  dealStartMs: number;  // epoch ms — início do período para closedate
+  dealEndMs:   number;  // epoch ms — fim do período para closedate (período completo)
+  label:       string;
 }
 
 function periodRange(period: string): PeriodRange {
-  const now   = new Date();
-  const today = toDateStr(now);
+  const now = new Date();
+  const y   = now.getUTCFullYear();
+  const m   = now.getUTCMonth();  // 0-indexed
+  const d   = now.getUTCDate();
+
   switch (period) {
     case "hoje": {
-      const s = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return { startMs: s.getTime(), endMs: now.getTime(), startDate: today, endDate: today, label: "Hoje" };
+      const s = Date.UTC(y, m, d);
+      const e = Date.UTC(y, m, d + 1) - 1;
+      return { startMs: s, endMs: now.getTime(), dealStartMs: s, dealEndMs: e, label: "Hoje" };
     }
     case "mes-passado": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { startMs: first.getTime(), endMs: last.getTime() + 86399999, startDate: toDateStr(first), endDate: toDateStr(last), label: "Mês Passado" };
+      const s = Date.UTC(y, m - 1, 1);
+      const e = Date.UTC(y, m, 1) - 1;
+      return { startMs: s, endMs: e, dealStartMs: s, dealEndMs: e, label: "Mês Passado" };
     }
     case "trimestre": {
-      const qStart = Math.floor(now.getMonth() / 3) * 3;
-      const first  = new Date(now.getFullYear(), qStart, 1);
-      const last   = new Date(now.getFullYear(), qStart + 3, 0); // último dia do trimestre
-      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: toDateStr(last), label: "Este Trimestre" };
+      const qStart = Math.floor(m / 3) * 3;
+      const s = Date.UTC(y, qStart, 1);
+      const e = Date.UTC(y, qStart + 3, 1) - 1;
+      return { startMs: s, endMs: now.getTime(), dealStartMs: s, dealEndMs: e, label: "Este Trimestre" };
     }
     default: { // "mes"
-      const first = new Date(now.getFullYear(), now.getMonth(), 1);
-      const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0); // último dia do mês
-      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: toDateStr(last), label: "Este Mês" };
+      const s = Date.UTC(y, m, 1);
+      const e = Date.UTC(y, m + 1, 1) - 1;
+      return { startMs: s, endMs: now.getTime(), dealStartMs: s, dealEndMs: e, label: "Este Mês" };
     }
   }
 }
@@ -68,7 +73,7 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
   const { b2b: configuredTeam } = await getTeamConfig();
   if (!configuredTeam.length) return SEED_B2B;
 
-  const { startMs, endMs, startDate, endDate, label: periodLabel } = periodRange(opts?.period ?? "mes");
+  const { startMs, endMs, dealStartMs, dealEndMs, label: periodLabel } = periodRange(opts?.period ?? "mes");
 
   const allOwners = await getOwners();
   const ownerByEmail = new Map<string, Owner>(allOwners.map((o) => [o.email.toLowerCase(), o]));
@@ -105,8 +110,8 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
           filters: [
             ...pipelineFilter,
             ...closedStageFilter,
-            { propertyName: "closedate", operator: "GTE", value: startDate },
-            { propertyName: "closedate", operator: "LTE", value: endDate   },
+            { propertyName: "closedate", operator: "GTE", value: String(dealStartMs) },
+            { propertyName: "closedate", operator: "LTE", value: String(dealEndMs)   },
           ],
         }],
         properties: [PROP_REVENUE_LIQUIDO, PROP_REVENUE_BRUTO, "hubspot_owner_id", "dealname"],

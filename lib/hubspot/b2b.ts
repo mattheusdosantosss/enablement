@@ -1,4 +1,4 @@
-import { hsPost } from "./client";
+import { hsPost, hsPostAll } from "./client";
 import { getOwners, ownerName, type Owner } from "./owners";
 import { getTeamConfig } from "@/lib/config";
 import type { ProfRow } from "@/components/ProfessionalTable";
@@ -10,13 +10,20 @@ const PROP_REVENUE_LIQUIDO = process.env.HUBSPOT_B2B_PROP_REVENUE_LIQUIDO
                            ?? "amount";
 const PROP_REVENUE_BRUTO   = process.env.HUBSPOT_B2B_PROP_REVENUE_BRUTO        ?? PROP_REVENUE_LIQUIDO;
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// IDs das etapas "Negócio fechado" e "Ganho / Contrato assinado" do pipeline B2B
+const WON_STAGE_IDS: string[] = [
+  process.env.HUBSPOT_STAGE_NEGOCIO_FECHADO,
+  process.env.HUBSPOT_STAGE_GANHO_CONTRATO,
+].filter(Boolean) as string[];
+
+/* ── date helpers ────────────────────────────────────────────────────────── */
+const pad       = (n: number) => String(n).padStart(2, "0");
+const toDateStr = (d: Date)   => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 interface PeriodRange {
-  startMs:   number;   // para hs_timestamp em reuniões
+  startMs:   number;   // para hs_timestamp (reuniões)
   endMs:     number;
-  startDate: string;   // YYYY-MM-DD para closedate (evita problema de timezone UTC vs BRT)
+  startDate: string;   // YYYY-MM-DD para closedate — evita divergência UTC/BRT
   endDate:   string;
   label:     string;
 }
@@ -24,27 +31,20 @@ interface PeriodRange {
 function periodRange(period: string): PeriodRange {
   const now   = new Date();
   const today = toDateStr(now);
-
   switch (period) {
     case "hoje": {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return { startMs: startOfDay.getTime(), endMs: now.getTime(), startDate: today, endDate: today, label: "Hoje" };
+      const s = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return { startMs: s.getTime(), endMs: now.getTime(), startDate: today, endDate: today, label: "Hoje" };
     }
     case "mes-passado": {
       const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-      return {
-        startMs: first.getTime(),
-        endMs:   new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime(),
-        startDate: toDateStr(first), endDate: toDateStr(last),
-        label: "Mês Passado",
-      };
+      return { startMs: first.getTime(), endMs: last.getTime() + 86399999, startDate: toDateStr(first), endDate: toDateStr(last), label: "Mês Passado" };
     }
     case "trimestre": {
       const first = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
       return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: today, label: "Este Trimestre" };
     }
-    case "mes":
     default: {
       const first = new Date(now.getFullYear(), now.getMonth(), 1);
       return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: today, label: "Este Mês" };
@@ -52,6 +52,7 @@ function periodRange(period: string): PeriodRange {
   }
 }
 
+/* ── main export ─────────────────────────────────────────────────────────── */
 export interface B2BData {
   periodLabel: string;
   totals: { meetings: number; deals: number; revenue: number; revenueBruto: number; inNegotiation: number };
@@ -67,95 +68,145 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
   const { startMs, endMs, startDate, endDate, label: periodLabel } = periodRange(opts?.period ?? "mes");
 
   const allOwners = await getOwners();
-  const ownerByEmail = new Map<string, Owner>(
-    allOwners.map((o) => [o.email.toLowerCase(), o])
-  );
+  const ownerByEmail = new Map<string, Owner>(allOwners.map((o) => [o.email.toLowerCase(), o]));
+  const ownerById    = new Map<string, Owner>(allOwners.map((o) => [o.id, o]));
+
+  // Mapeia membro configurado ↔ owner HubSpot
+  const memberByOwnerId = new Map<string, { name: string; email: string }>();
+  const ownerIds: string[] = [];
+  for (const m of configuredTeam) {
+    const owner = ownerByEmail.get(m.email.toLowerCase());
+    if (owner) {
+      memberByOwnerId.set(owner.id, { name: ownerName(owner), email: m.email });
+      ownerIds.push(owner.id);
+    }
+  }
 
   const pipelineFilter = PIPELINE_B2B
     ? [{ propertyName: "pipeline", operator: "EQ", value: PIPELINE_B2B }]
     : [];
 
-  const rows: ProfRow[] = await Promise.all(
-    configuredTeam.map(async (member) => {
-      const owner = ownerByEmail.get(member.email.toLowerCase());
-      const row: ProfRow = {
-        id: owner?.id ?? member.email,
-        name: owner ? ownerName(owner) : member.name,
-        email: member.email,
-        meetings: 0, deals: 0, revenue: 0, revenueBruto: 0, inNegotiation: 0,
-      };
+  // Filtro de estágio: usa IDs configurados; fallback para hs_is_closed_won
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const closedStageFilter: any[] = WON_STAGE_IDS.length > 0
+    ? [{ propertyName: "dealstage", operator: "IN", values: WON_STAGE_IDS }]
+    : [{ propertyName: "hs_is_closed_won", operator: "EQ", value: "true" }];
 
-      if (!owner) return row;
+  // Query bulk de negócios — sem filtro por owner, agrega depois.
+  // Isso evita que membros sem correspondência exata de e-mail sumam dos resultados.
+  const [allDeals, allMeetings, negDeals] = await Promise.all([
+    hsPostAll(
+      "/crm/v3/objects/deals/search",
+      {
+        filterGroups: [{
+          filters: [
+            ...pipelineFilter,
+            ...closedStageFilter,
+            { propertyName: "closedate", operator: "GTE", value: startDate },
+            { propertyName: "closedate", operator: "LTE", value: endDate   },
+          ],
+        }],
+        properties: [PROP_REVENUE_LIQUIDO, PROP_REVENUE_BRUTO, "hubspot_owner_id", "dealname"],
+        limit: 100,
+      }
+    ).catch(() => []),
 
-      const [dealsRes, negRes, meetRes] = await Promise.all([
-        // Negócios fechados no período
-        // Usa hs_is_closed_won=true em vez de dealstage=closedwon para funcionar
-        // com estágios customizados do pipeline B2B (não só o padrão closedwon).
-        // Usa datas YYYY-MM-DD para closedate para evitar divergência UTC/BRT.
-        hsPost<{ results: { properties: Record<string, string> }[] }>(
+    // Reuniões: usa IN para todos os owners de uma vez
+    ownerIds.length > 0
+      ? hsPost<{ results: { properties: Record<string, string> }[] }>(
+          "/crm/v3/objects/meetings/search",
+          {
+            filterGroups: [{
+              filters: [
+                { propertyName: "hubspot_owner_id",   operator: "IN",  values: ownerIds     },
+                { propertyName: "hs_meeting_outcome", operator: "EQ",  value: "COMPLETED"   },
+                { propertyName: "hs_timestamp",       operator: "GTE", value: String(startMs) },
+                { propertyName: "hs_timestamp",       operator: "LTE", value: String(endMs)   },
+              ],
+            }],
+            properties: ["hs_meeting_outcome", "hubspot_owner_id"],
+            limit: 200,
+          }
+        ).catch(() => ({ results: [] }))
+      : Promise.resolve({ results: [] }),
+
+    // Em negociação (snapshot) — também bulk
+    STAGE_NEGOTIATION && ownerIds.length > 0
+      ? hsPost<{ results: { properties: Record<string, string> }[] }>(
           "/crm/v3/objects/deals/search",
           {
             filterGroups: [{
               filters: [
                 ...pipelineFilter,
-                { propertyName: "hubspot_owner_id",  operator: "EQ",  value: owner.id     },
-                { propertyName: "hs_is_closed_won",  operator: "EQ",  value: "true"       },
-                { propertyName: "closedate",         operator: "GTE", value: startDate    },
-                { propertyName: "closedate",         operator: "LTE", value: endDate      },
+                { propertyName: "hubspot_owner_id", operator: "IN", values: ownerIds        },
+                { propertyName: "dealstage",        operator: "EQ", value: STAGE_NEGOTIATION },
               ],
             }],
-            properties: [PROP_REVENUE_LIQUIDO, PROP_REVENUE_BRUTO, "dealname"],
+            properties: ["hubspot_owner_id"],
             limit: 200,
           }
-        ).catch(() => ({ results: [] })),
+        ).catch(() => ({ results: [] }))
+      : Promise.resolve({ results: [] }),
+  ]);
 
-        // Em negociação (snapshot)
-        STAGE_NEGOTIATION
-          ? hsPost<{ results: unknown[] }>(
-              "/crm/v3/objects/deals/search",
-              {
-                filterGroups: [{
-                  filters: [
-                    ...pipelineFilter,
-                    { propertyName: "hubspot_owner_id", operator: "EQ", value: owner.id          },
-                    { propertyName: "dealstage",        operator: "EQ", value: STAGE_NEGOTIATION },
-                  ],
-                }],
-                properties: ["hubspot_owner_id"],
-                limit: 200,
-              }
-            ).catch(() => ({ results: [] }))
-          : Promise.resolve({ results: [] }),
+  // Agrega por owner ID
+  const dealsByOwner = new Map<string, { deals: number; revenue: number; revenueBruto: number }>();
+  for (const d of allDeals) {
+    const oid = d.properties["hubspot_owner_id"];
+    if (!oid) continue;
+    const cur = dealsByOwner.get(oid) ?? { deals: 0, revenue: 0, revenueBruto: 0 };
+    cur.deals++;
+    cur.revenue      += Number(d.properties[PROP_REVENUE_LIQUIDO] ?? 0);
+    cur.revenueBruto += Number(d.properties[PROP_REVENUE_BRUTO]   ?? 0);
+    dealsByOwner.set(oid, cur);
+  }
 
-        // Reuniões realizadas no período
-        hsPost<{ results: unknown[] }>(
-          "/crm/v3/objects/meetings/search",
-          {
-            filterGroups: [{
-              filters: [
-                { propertyName: "hubspot_owner_id",   operator: "EQ",  value: owner.id       },
-                { propertyName: "hs_meeting_outcome", operator: "EQ",  value: "COMPLETED"    },
-                { propertyName: "hs_timestamp",       operator: "GTE", value: String(startMs) },
-                { propertyName: "hs_timestamp",       operator: "LTE", value: String(endMs)   },
-              ],
-            }],
-            properties: ["hs_meeting_outcome"],
-            limit: 200,
-          }
-        ).catch(() => ({ results: [] })),
-      ]);
+  const meetingsByOwner = new Map<string, number>();
+  for (const m of allMeetings.results) {
+    const oid = m.properties["hubspot_owner_id"];
+    if (!oid) continue;
+    meetingsByOwner.set(oid, (meetingsByOwner.get(oid) ?? 0) + 1);
+  }
 
-      for (const d of dealsRes.results) {
-        row.deals        = (row.deals        ?? 0) + 1;
-        row.revenue      = (row.revenue      ?? 0) + Number(d.properties[PROP_REVENUE_LIQUIDO] ?? 0);
-        row.revenueBruto = (row.revenueBruto ?? 0) + Number(d.properties[PROP_REVENUE_BRUTO]   ?? 0);
-      }
-      row.inNegotiation = negRes.results.length;
-      row.meetings      = meetRes.results.length;
+  const negByOwner = new Map<string, number>();
+  for (const d of negDeals.results) {
+    const oid = d.properties["hubspot_owner_id"];
+    if (!oid) continue;
+    negByOwner.set(oid, (negByOwner.get(oid) ?? 0) + 1);
+  }
 
-      return row;
-    })
-  );
+  // Constrói linhas para cada membro configurado
+  const rows: ProfRow[] = configuredTeam.map((member) => {
+    const owner   = ownerByEmail.get(member.email.toLowerCase());
+    const ownerId = owner?.id;
+    const deals   = ownerId ? (dealsByOwner.get(ownerId)   ?? { deals: 0, revenue: 0, revenueBruto: 0 }) : { deals: 0, revenue: 0, revenueBruto: 0 };
+
+    return {
+      id:            ownerId ?? member.email,
+      name:          owner ? ownerName(owner) : member.name,
+      email:         member.email,
+      meetings:      ownerId ? (meetingsByOwner.get(ownerId) ?? 0) : 0,
+      deals:         deals.deals,
+      revenue:       deals.revenue,
+      revenueBruto:  deals.revenueBruto,
+      inNegotiation: ownerId ? (negByOwner.get(ownerId) ?? 0) : 0,
+    };
+  });
+
+  // Negócios de owners fora do time configurado (não exibidos individualmente, mas somados)
+  // Isso garante que o total bata com o HubSpot mesmo se algum owner não está no Redis
+  for (const [ownerId, stats] of dealsByOwner.entries()) {
+    if (!memberByOwnerId.has(ownerId)) {
+      // Owner com negócio fechado mas não está na config — adiciona como linha "Outros"
+      const owner = ownerById.get(ownerId);
+      rows.push({
+        id: ownerId, name: owner ? ownerName(owner) : ownerId, email: "",
+        meetings: meetingsByOwner.get(ownerId) ?? 0,
+        deals: stats.deals, revenue: stats.revenue, revenueBruto: stats.revenueBruto,
+        inNegotiation: 0,
+      });
+    }
+  }
 
   rows.sort((a, b) => (b.deals ?? 0) - (a.deals ?? 0));
 

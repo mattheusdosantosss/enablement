@@ -10,6 +10,7 @@ export interface MemberStats {
   count: number;
   totalMin: number;
   gestao: string | null;
+  coordenacao: string | null;
   allObjetivos: string[];
   tipoRecente: string | null;
   notaMedia: number | null;
@@ -216,7 +217,8 @@ function MemberCard({ m, onClick }: { m: MemberStats; onClick: () => void }) {
         <CardRow label="Feedbacks realizados" value={String(m.count)} accent={hasFeedback} />
         <CardRow label="Mentoria técnica" value={fmtMin(m.totalMin)} />
         {m.tipoRecente && <CardRow label="Tipo (último)" value={m.tipoRecente} />}
-        {m.gestao && <CardRow label="Gestão" value={m.gestao} />}
+        {m.gestao && <CardRow label="Gerência" value={m.gestao} />}
+        {m.coordenacao && <CardRow label="Coordenação" value={m.coordenacao} />}
         {m.allObjetivos.length > 0 && (
           <div>
             <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>

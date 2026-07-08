@@ -18,12 +18,14 @@ const TIPO_OPTIONS = [
   "Treinamento em grupo",
 ];
 const CARGA_OPTIONS = ["30 min", "45 min", "1h", "1h30", "2h"];
-const GESTAO_OPTIONS = [
+const GERENCIA_OPTIONS = [
   "Nicollas Blanco Lenuzza",
   "Leandro Lara Bengochea",
   "Cesar Luiz dos Santos Filho",
   "Eduardo Tavares",
 ];
+const COORDENACAO_OPTIONS = ["Katyeli", "Leticia", "Daniel Sias"];
+const GERENCIA_COM_COORD = "Leandro Lara Bengochea";
 
 type Status = "idle" | "sending" | "ok" | "error";
 
@@ -67,6 +69,9 @@ function HistoryItem({ item }: { item: FeedbackEntry }) {
               </span>
               {item.gestao && (
                 <span style={{ fontSize: 11, color: "var(--text-3)" }}>{item.gestao}</span>
+              )}
+              {item.coordenacao && (
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>· {item.coordenacao}</span>
               )}
             </div>
           </div>
@@ -147,6 +152,7 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
   const [tipo,        setTipo]        = useState("");
   const [carga,       setCarga]       = useState("");
   const [gestao,      setGestao]      = useState("");
+  const [coordenacao, setCoordenacao] = useState("");
   const [objetivo,    setObjetivo]    = useState("");
   const [nota,        setNota]        = useState(0);
   const [text,        setText]        = useState("");
@@ -178,14 +184,16 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           team, memberName: selectedMember?.name ?? memberEmail,
-          memberEmail, tipo: tipo || null, carga, gestao, objetivo,
-          nota: nota > 0 ? nota : null, text,
+          memberEmail, tipo: tipo || null, carga,
+          gestao: gestao || null,
+          coordenacao: (gestao === GERENCIA_COM_COORD && coordenacao) ? coordenacao : null,
+          objetivo, nota: nota > 0 ? nota : null, text,
         }),
       });
       if (res.ok) {
         setStatus("ok");
         setTeam(""); setMemberEmail(""); setTipo(""); setCarga("");
-        setGestao(""); setObjetivo(""); setNota(0); setText("");
+        setGestao(""); setCoordenacao(""); setObjetivo(""); setNota(0); setText("");
         fetchHistory();
       } else {
         const d = await res.json().catch(() => ({}));
@@ -252,13 +260,26 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
               </select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label className="flab">Gestão</label>
-              <select className="finp" value={gestao} onChange={(e) => setGestao(e.target.value)}>
+              <label className="flab">Gerência</label>
+              <select className="finp" value={gestao} onChange={(e) => {
+                setGestao(e.target.value);
+                if (e.target.value !== GERENCIA_COM_COORD) setCoordenacao("");
+              }}>
                 <option value="">Selecione...</option>
-                {GESTAO_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
+                {GERENCIA_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
           </div>
+
+          {gestao === GERENCIA_COM_COORD && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label className="flab">Coordenação</label>
+              <select className="finp" value={coordenacao} onChange={(e) => setCoordenacao(e.target.value)}>
+                <option value="">Selecione a coordenação...</option>
+                {COORDENACAO_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label className="flab">Objetivo do Treinamento</label>

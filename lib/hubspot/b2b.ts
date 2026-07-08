@@ -21,10 +21,10 @@ const pad       = (n: number) => String(n).padStart(2, "0");
 const toDateStr = (d: Date)   => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 interface PeriodRange {
-  startMs:   number;   // para hs_timestamp (reuniões)
+  startMs:   number;  // epoch ms — para hs_timestamp (reuniões, que não podem ser futuras)
   endMs:     number;
-  startDate: string;   // YYYY-MM-DD para closedate — evita divergência UTC/BRT
-  endDate:   string;
+  startDate: string;  // YYYY-MM-DD — para closedate de negócios
+  endDate:   string;  // fim do PERÍODO COMPLETO (inclui datas futuras do mês/trimestre)
   label:     string;
 }
 
@@ -42,12 +42,15 @@ function periodRange(period: string): PeriodRange {
       return { startMs: first.getTime(), endMs: last.getTime() + 86399999, startDate: toDateStr(first), endDate: toDateStr(last), label: "Mês Passado" };
     }
     case "trimestre": {
-      const first = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: today, label: "Este Trimestre" };
+      const qStart = Math.floor(now.getMonth() / 3) * 3;
+      const first  = new Date(now.getFullYear(), qStart, 1);
+      const last   = new Date(now.getFullYear(), qStart + 3, 0); // último dia do trimestre
+      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: toDateStr(last), label: "Este Trimestre" };
     }
-    default: {
+    default: { // "mes"
       const first = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: today, label: "Este Mês" };
+      const last  = new Date(now.getFullYear(), now.getMonth() + 1, 0); // último dia do mês
+      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: toDateStr(last), label: "Este Mês" };
     }
   }
 }

@@ -3,35 +3,51 @@ import { getOwners, ownerName, type Owner } from "./owners";
 import { getTeamConfig } from "@/lib/config";
 import type { ProfRow } from "@/components/ProfessionalTable";
 
-const PIPELINE_B2B        = process.env.HUBSPOT_PIPELINE_B2B           ?? "";
-const STAGE_NEGOTIATION   = process.env.HUBSPOT_B2B_STAGE_NEGOTIATION  ?? "";
+const PIPELINE_B2B         = process.env.HUBSPOT_PIPELINE_B2B                  ?? "";
+const STAGE_NEGOTIATION    = process.env.HUBSPOT_B2B_STAGE_NEGOTIATION         ?? "";
 const PROP_REVENUE_LIQUIDO = process.env.HUBSPOT_B2B_PROP_REVENUE_LIQUIDO
                            ?? process.env.HUBSPOT_B2B_PROP_REVENUE
                            ?? "amount";
-const PROP_REVENUE_BRUTO   = process.env.HUBSPOT_B2B_PROP_REVENUE_BRUTO ?? PROP_REVENUE_LIQUIDO;
+const PROP_REVENUE_BRUTO   = process.env.HUBSPOT_B2B_PROP_REVENUE_BRUTO        ?? PROP_REVENUE_LIQUIDO;
 
-function periodRange(period: string): { start: number; end: number; label: string } {
-  const now = new Date();
+const pad = (n: number) => String(n).padStart(2, "0");
+const toDateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+interface PeriodRange {
+  startMs:   number;   // para hs_timestamp em reuniões
+  endMs:     number;
+  startDate: string;   // YYYY-MM-DD para closedate (evita problema de timezone UTC vs BRT)
+  endDate:   string;
+  label:     string;
+}
+
+function periodRange(period: string): PeriodRange {
+  const now   = new Date();
+  const today = toDateStr(now);
 
   switch (period) {
     case "hoje": {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-      return { start, end: now.getTime(), label: "Hoje" };
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return { startMs: startOfDay.getTime(), endMs: now.getTime(), startDate: today, endDate: today, label: "Hoje" };
     }
     case "mes-passado": {
-      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
-      const end   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
-      return { start, end, label: "Mês Passado" };
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last  = new Date(now.getFullYear(), now.getMonth(), 0);
+      return {
+        startMs: first.getTime(),
+        endMs:   new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime(),
+        startDate: toDateStr(first), endDate: toDateStr(last),
+        label: "Mês Passado",
+      };
     }
     case "trimestre": {
-      const qStart = Math.floor(now.getMonth() / 3) * 3;
-      const start  = new Date(now.getFullYear(), qStart, 1).getTime();
-      return { start, end: now.getTime(), label: "Este Trimestre" };
+      const first = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: today, label: "Este Trimestre" };
     }
     case "mes":
     default: {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-      return { start, end: now.getTime(), label: "Este Mês" };
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { startMs: first.getTime(), endMs: now.getTime(), startDate: toDateStr(first), endDate: today, label: "Este Mês" };
     }
   }
 }
@@ -48,7 +64,7 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
   const { b2b: configuredTeam } = await getTeamConfig();
   if (!configuredTeam.length) return SEED_B2B;
 
-  const { start, end, label: periodLabel } = periodRange(opts?.period ?? "mes");
+  const { startMs, endMs, startDate, endDate, label: periodLabel } = periodRange(opts?.period ?? "mes");
 
   const allOwners = await getOwners();
   const ownerByEmail = new Map<string, Owner>(
@@ -73,16 +89,19 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
 
       const [dealsRes, negRes, meetRes] = await Promise.all([
         // Negócios fechados no período
+        // Usa hs_is_closed_won=true em vez de dealstage=closedwon para funcionar
+        // com estágios customizados do pipeline B2B (não só o padrão closedwon).
+        // Usa datas YYYY-MM-DD para closedate para evitar divergência UTC/BRT.
         hsPost<{ results: { properties: Record<string, string> }[] }>(
           "/crm/v3/objects/deals/search",
           {
             filterGroups: [{
               filters: [
                 ...pipelineFilter,
-                { propertyName: "hubspot_owner_id", operator: "EQ",  value: owner.id     },
-                { propertyName: "dealstage",        operator: "EQ",  value: "closedwon"  },
-                { propertyName: "closedate",        operator: "GTE", value: String(start) },
-                { propertyName: "closedate",        operator: "LTE", value: String(end)   },
+                { propertyName: "hubspot_owner_id",  operator: "EQ",  value: owner.id     },
+                { propertyName: "hs_is_closed_won",  operator: "EQ",  value: "true"       },
+                { propertyName: "closedate",         operator: "GTE", value: startDate    },
+                { propertyName: "closedate",         operator: "LTE", value: endDate      },
               ],
             }],
             properties: [PROP_REVENUE_LIQUIDO, PROP_REVENUE_BRUTO, "dealname"],
@@ -98,8 +117,8 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
                 filterGroups: [{
                   filters: [
                     ...pipelineFilter,
-                    { propertyName: "hubspot_owner_id", operator: "EQ", value: owner.id            },
-                    { propertyName: "dealstage",        operator: "EQ", value: STAGE_NEGOTIATION   },
+                    { propertyName: "hubspot_owner_id", operator: "EQ", value: owner.id          },
+                    { propertyName: "dealstage",        operator: "EQ", value: STAGE_NEGOTIATION },
                   ],
                 }],
                 properties: ["hubspot_owner_id"],
@@ -114,10 +133,10 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
           {
             filterGroups: [{
               filters: [
-                { propertyName: "hubspot_owner_id",    operator: "EQ",  value: owner.id       },
-                { propertyName: "hs_meeting_outcome",  operator: "EQ",  value: "COMPLETED"    },
-                { propertyName: "hs_timestamp",        operator: "GTE", value: String(start)  },
-                { propertyName: "hs_timestamp",        operator: "LTE", value: String(end)    },
+                { propertyName: "hubspot_owner_id",   operator: "EQ",  value: owner.id       },
+                { propertyName: "hs_meeting_outcome", operator: "EQ",  value: "COMPLETED"    },
+                { propertyName: "hs_timestamp",       operator: "GTE", value: String(startMs) },
+                { propertyName: "hs_timestamp",       operator: "LTE", value: String(endMs)   },
               ],
             }],
             properties: ["hs_meeting_outcome"],

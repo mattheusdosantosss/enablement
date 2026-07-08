@@ -175,12 +175,11 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
     negByOwner.set(oid, (negByOwner.get(oid) ?? 0) + 1);
   }
 
-  // Constrói linhas para cada membro configurado
+  // Apenas membros configurados em Equipes → B2B; owners fora da config são ignorados
   const rows: ProfRow[] = configuredTeam.map((member) => {
     const owner   = ownerByEmail.get(member.email.toLowerCase());
     const ownerId = owner?.id;
-    const deals   = ownerId ? (dealsByOwner.get(ownerId)   ?? { deals: 0, revenue: 0, revenueBruto: 0 }) : { deals: 0, revenue: 0, revenueBruto: 0 };
-
+    const deals   = ownerId ? (dealsByOwner.get(ownerId) ?? { deals: 0, revenue: 0, revenueBruto: 0 }) : { deals: 0, revenue: 0, revenueBruto: 0 };
     return {
       id:            ownerId ?? member.email,
       name:          owner ? ownerName(owner) : member.name,
@@ -192,21 +191,6 @@ export async function getB2BData(opts?: { period?: string }): Promise<B2BData> {
       inNegotiation: ownerId ? (negByOwner.get(ownerId) ?? 0) : 0,
     };
   });
-
-  // Negócios de owners fora do time configurado (não exibidos individualmente, mas somados)
-  // Isso garante que o total bata com o HubSpot mesmo se algum owner não está no Redis
-  for (const [ownerId, stats] of dealsByOwner.entries()) {
-    if (!memberByOwnerId.has(ownerId)) {
-      // Owner com negócio fechado mas não está na config — adiciona como linha "Outros"
-      const owner = ownerById.get(ownerId);
-      rows.push({
-        id: ownerId, name: owner ? ownerName(owner) : ownerId, email: "",
-        meetings: meetingsByOwner.get(ownerId) ?? 0,
-        deals: stats.deals, revenue: stats.revenue, revenueBruto: stats.revenueBruto,
-        inNegotiation: 0,
-      });
-    }
-  }
 
   rows.sort((a, b) => (b.deals ?? 0) - (a.deals ?? 0));
 

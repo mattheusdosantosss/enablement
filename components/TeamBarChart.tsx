@@ -83,7 +83,7 @@ export default function TeamBarChart({
             onClick={onBarClick ? (data: any) => onBarClick(data as BarEntry) : undefined}
           >
             {sorted.map((_, i) => (
-              <Cell key={i} fill={i === 0 ? color : `${color}99`} />
+              <Cell key={i} fill={color} />
             ))}
           </Bar>
         </BarChart>

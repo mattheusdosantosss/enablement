@@ -24,8 +24,17 @@ const GERENCIA_OPTIONS = [
   "Cesar Luiz dos Santos Filho",
   "Eduardo Tavares",
 ];
-const COORDENACAO_OPTIONS = ["Katyeli", "Leticia", "Daniel Sias"];
-const GERENCIA_COM_COORD = "Leandro Lara Bengochea";
+// Coordenadores por gerência — emails vinculam ao HubSpot para CC no e-mail
+const COORD_BY_GERENCIA: Record<string, { email: string; name: string }[]> = {
+  "Leandro Lara Bengochea": [
+    { email: "katyeli.madril@profissionaissa.com",  name: "Katyeli Ceroni Madril"     },
+    { email: "daniel.sias@profissionaissa.com",     name: "Daniel Bento Sias"         },
+    { email: "leticia.santos@profissionaissa.com",  name: "Leticia Silva dos Santos"  },
+  ],
+  "Cesar Luiz dos Santos Filho": [
+    { email: "eduardo.vince@profissionaissa.com",   name: "Eduardo Vince"             },
+  ],
+};
 
 type Status = "idle" | "sending" | "ok" | "error";
 
@@ -162,8 +171,10 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
   const [history,     setHistory]     = useState<FeedbackEntry[]>([]);
   const [histLoading, setHistLoading] = useState(true);
 
-  const selectedTeam   = teams.find((t) => t.value === team);
-  const selectedMember = selectedTeam?.members.find((m) => m.email === memberEmail);
+  const selectedTeam      = teams.find((t) => t.value === team);
+  const selectedMember    = selectedTeam?.members.find((m) => m.email === memberEmail);
+  const coordsForGerencia = COORD_BY_GERENCIA[gestao] ?? [];
+  const selectedCoord     = coordsForGerencia.find((c) => c.email === coordenacao);
 
   function fetchHistory() {
     fetch("/api/feedback")
@@ -186,7 +197,8 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
           team, memberName: selectedMember?.name ?? memberEmail,
           memberEmail, tipo: tipo || null, carga,
           gestao: gestao || null,
-          coordenacao: (gestao === GERENCIA_COM_COORD && coordenacao) ? coordenacao : null,
+          coordenacao: selectedCoord?.name ?? null,
+          coordenacaoEmail: selectedCoord?.email ?? null,
           objetivo, nota: nota > 0 ? nota : null, text,
         }),
       });
@@ -263,7 +275,7 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
               <label className="flab">Gerência</label>
               <select className="finp" value={gestao} onChange={(e) => {
                 setGestao(e.target.value);
-                if (e.target.value !== GERENCIA_COM_COORD) setCoordenacao("");
+                setCoordenacao("");
               }}>
                 <option value="">Selecione...</option>
                 {GERENCIA_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
@@ -271,12 +283,14 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
             </div>
           </div>
 
-          {gestao === GERENCIA_COM_COORD && (
+          {coordsForGerencia.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label className="flab">Coordenação</label>
               <select className="finp" value={coordenacao} onChange={(e) => setCoordenacao(e.target.value)}>
                 <option value="">Selecione a coordenação...</option>
-                {COORDENACAO_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+                {coordsForGerencia.map((c) => (
+                  <option key={c.email} value={c.email}>{c.name}</option>
+                ))}
               </select>
             </div>
           )}

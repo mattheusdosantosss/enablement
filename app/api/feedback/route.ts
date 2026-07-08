@@ -24,6 +24,7 @@ export interface FeedbackEntry {
   carga: string | null;
   gestao: string | null;
   coordenacao: string | null;
+  coordenacaoEmail: string | null;
   objetivo: string | null;
   tipo: string | null;
   nota: number | null;
@@ -55,6 +56,13 @@ const MANAGERS: Record<string, string> = {
   farmers: "leandro.bengochea@profissionaissa.com",
 };
 
+// Email da gerência selecionada no form (TO do e-mail)
+const GERENCIA_EMAILS: Record<string, string> = {
+  "Nicollas Blanco Lenuzza":       "nicollas.lenuzza@profissionaissa.com",
+  "Leandro Lara Bengochea":        "leandro.bengochea@profissionaissa.com",
+  "Cesar Luiz dos Santos Filho":   "cesar.filho@profissionaissa.com",
+};
+
 const TEAM_LABEL: Record<string, string> = {
   b2b: "B2B", b2c: "B2C", farmers: "Farmers",
 };
@@ -69,7 +77,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
   }
 
-  const { team, memberName, memberEmail, carga, gestao, coordenacao, objetivo, tipo, nota, text } = body ?? {};
+  const { team, memberName, memberEmail, carga, gestao, coordenacao, coordenacaoEmail, objetivo, tipo, nota, text } = body ?? {};
   if (!team || !memberName || !text?.trim()) {
     return NextResponse.json({ error: "Campos obrigatórios faltando." }, { status: 400 });
   }
@@ -91,9 +99,15 @@ export async function POST(req: Request) {
     nota     ? `<tr><td style="padding:6px 0;color:#a4a4b2">Avaliação</td><td style="color:#f0f0f4">${"★".repeat(Number(nota))}${"☆".repeat(5 - Number(nota))} (${nota}/5)</td></tr>` : "",
   ].join("");
 
+  // Rota o e-mail para a gerência selecionada; fallback para o manager do time
+  const toEmail = (gestao && GERENCIA_EMAILS[gestao]) ?? managerEmail;
+  const ccEmails: string[] = [];
+  if (coordenacaoEmail) ccEmails.push(String(coordenacaoEmail));
+
   const { error } = await resend.emails.send({
     from: `PSA Enablement <${process.env.RESEND_FROM ?? "enablement@profissionaissa.com"}>`,
-    to: managerEmail,
+    to: toEmail,
+    ...(ccEmails.length > 0 ? { cc: ccEmails } : {}),
     subject: `[Feedback] ${memberName} - Time ${label}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
@@ -136,6 +150,7 @@ export async function POST(req: Request) {
         carga: carga || null,
         gestao: gestao || null,
         coordenacao: coordenacao || null,
+        coordenacaoEmail: coordenacaoEmail || null,
         objetivo: objetivo || null,
         tipo: tipo || null,
         nota: nota ? Number(nota) : null,

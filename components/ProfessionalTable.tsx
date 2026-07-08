@@ -18,6 +18,7 @@ export interface ProfRow {
   converted?: number;      // receita bruta dos negócios fechados
   closedCount?: number;    // quantidade de negócios fechados
   revenueLiquido?: number; // receita líquida dos negócios fechados
+  revenueBruto?:  number; // receita bruta dos negócios fechados (B2B)
 }
 
 function initials(name: string) {

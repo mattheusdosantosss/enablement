@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { FeedbackEntry } from "@/app/api/feedback/route";
+import RichTextEditor from "./RichTextEditor";
 
 export interface TeamOption {
   value: string;
@@ -24,7 +25,6 @@ const GERENCIA_OPTIONS = [
   "Cesar Luiz dos Santos Filho",
   "Eduardo Tavares",
 ];
-// Coordenadores por gerência — emails vinculam ao HubSpot para CC no e-mail
 const COORD_BY_GERENCIA: Record<string, { email: string; name: string }[]> = {
   "Leandro Lara Bengochea": [
     { email: "katyeli.madril@profissionaissa.com",  name: "Katyeli Ceroni Madril"     },
@@ -37,6 +37,10 @@ const COORD_BY_GERENCIA: Record<string, { email: string; name: string }[]> = {
 };
 
 type Status = "idle" | "sending" | "ok" | "error";
+
+function isEmptyHtml(html: string) {
+  return !html.replace(/<[^>]*>/g, "").trim();
+}
 
 function initials(name: string) {
   return name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
@@ -54,13 +58,58 @@ const TEAM_COLOR: Record<string, string> = {
   B2B: "var(--blue)", B2C: "var(--orange)", Farmers: "#46d17f",
 };
 
+const actionBtn = (color?: string): React.CSSProperties => ({
+  background: "none", border: "none", padding: "3px 8px", fontSize: 11,
+  color: color ?? "var(--text-3)", cursor: "pointer", fontWeight: 600,
+  borderRadius: 6,
+});
+
 /* ── HistoryItem ─────────────────────────────────────────────────────────── */
-function HistoryItem({ item }: { item: FeedbackEntry }) {
-  const [expanded, setExpanded] = useState(false);
-  const long = item.text.length > 140;
+function HistoryItem({
+  item, onDelete, onUpdate,
+}: {
+  item: FeedbackEntry;
+  onDelete: (id: string) => void;
+  onUpdate: (id: string, text: string) => void;
+}) {
+  const [expanded,   setExpanded]   = useState(false);
+  const [editing,    setEditing]    = useState(false);
+  const [editText,   setEditText]   = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
+
+  const plain = item.text.replace(/<[^>]*>/g, "");
+  const long  = plain.length > 140;
+
+  async function saveEdit() {
+    if (isEmptyHtml(editText)) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, text: editText }),
+      });
+      if (res.ok) { onUpdate(item.id, editText); setEditing(false); }
+    } finally { setSaving(false); }
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      if (res.ok) onDelete(item.id);
+    } finally { setDeleting(false); setConfirmDel(false); }
+  }
 
   return (
     <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border-soft)" }}>
+      {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span className="av" style={{ width: 34, height: 34, fontSize: 11, flexShrink: 0 }}>
@@ -129,26 +178,71 @@ function HistoryItem({ item }: { item: FeedbackEntry }) {
         </div>
       )}
 
-      <p style={{
-        fontSize: 12, color: "var(--text-2)", lineHeight: 1.65, margin: 0,
-        display: "-webkit-box",
-        WebkitLineClamp: expanded ? undefined : 3,
-        WebkitBoxOrient: "vertical" as const,
-        overflow: expanded ? "visible" : "hidden",
-        whiteSpace: "pre-wrap",
-      }}>
-        {item.text}
-      </p>
-      {long && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            background: "none", border: "none", padding: "4px 0 0", fontSize: 11,
-            color: "var(--blue)", cursor: "pointer", fontWeight: 600,
-          }}
-        >
-          {expanded ? "Ver menos" : "Ver mais"}
-        </button>
+      {/* Editor ou texto */}
+      {editing ? (
+        <div style={{ marginTop: 4 }}>
+          <RichTextEditor value={editText} onChange={setEditText} minHeight={120}
+            placeholder="Edite o feedback..." />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button className="btn" type="button" onClick={saveEdit} disabled={saving}
+              style={{ padding: "6px 16px", fontSize: 12 }}>
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+            <button type="button" onClick={() => setEditing(false)} style={{
+              background: "none", border: "1px solid var(--border)", borderRadius: 8,
+              padding: "6px 12px", fontSize: 12, color: "var(--text-2)", cursor: "pointer",
+            }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div
+            dangerouslySetInnerHTML={{ __html: item.text }}
+            style={{
+              fontSize: 12, color: "var(--text-2)", lineHeight: 1.65, margin: 0,
+              display: "-webkit-box",
+              WebkitLineClamp: expanded ? undefined : 3,
+              WebkitBoxOrient: "vertical" as const,
+              overflow: expanded ? "visible" : "hidden",
+            }}
+          />
+          {long && (
+            <button type="button" onClick={() => setExpanded(!expanded)}
+              style={{ background: "none", border: "none", padding: "4px 0 0", fontSize: 11, color: "var(--blue)", cursor: "pointer", fontWeight: 600 }}>
+              {expanded ? "Ver menos" : "Ver mais"}
+            </button>
+          )}
+
+          {/* Ações */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8, paddingTop: 6, borderTop: "1px solid var(--border-soft)" }}>
+            <button type="button"
+              onClick={() => { setEditing(true); setEditText(item.text); setConfirmDel(false); }}
+              style={actionBtn()}>
+              ✏ Editar
+            </button>
+            {confirmDel ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
+                <span style={{ fontSize: 11, color: "var(--text-2)" }}>Tem certeza?</span>
+                <button type="button" onClick={doDelete} disabled={deleting} style={{
+                  ...actionBtn("#f56565"),
+                  background: "rgba(245,101,101,0.08)", border: "1px solid rgba(245,101,101,0.25)",
+                  padding: "3px 10px", borderRadius: 6,
+                }}>
+                  {deleting ? "..." : "Confirmar"}
+                </button>
+                <button type="button" onClick={() => setConfirmDel(false)} style={actionBtn()}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setConfirmDel(true)} style={actionBtn()}>
+                🗑 Excluir
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -185,9 +279,17 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
 
   useEffect(() => { fetchHistory(); }, []);
 
+  function handleDelete(id: string) {
+    setHistory((h) => h.filter((i) => i.id !== id));
+  }
+
+  function handleUpdate(id: string, newText: string) {
+    setHistory((h) => h.map((i) => (i.id === id ? { ...i, text: newText } : i)));
+  }
+
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || !team || !memberEmail) return;
+    if (isEmptyHtml(text) || !team || !memberEmail) return;
     setStatus("sending"); setErrMsg("");
     try {
       const res = await fetch("/api/feedback", {
@@ -331,9 +433,11 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label className="flab">Feedback</label>
-            <textarea className="finp" value={text} onChange={(e) => setText(e.target.value)}
+            <RichTextEditor
+              value={text}
+              onChange={setText}
               placeholder="Descreva o feedback de forma objetiva e construtiva..."
-              rows={6} required style={{ resize: "vertical", lineHeight: 1.6 }} />
+            />
           </div>
 
           {selectedMember && (
@@ -350,7 +454,7 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
           {status === "error" && <div className="ferro">{errMsg}</div>}
 
           <button className="btn" type="submit"
-            disabled={status === "sending" || !team || !memberEmail || !text.trim()}
+            disabled={status === "sending" || !team || !memberEmail || isEmptyHtml(text)}
             style={{ alignSelf: "flex-start", padding: "10px 24px" }}>
             {status === "sending" ? "Enviando..." : "Salvar e Enviar"}
           </button>
@@ -375,7 +479,14 @@ export default function FeedbackClient({ teams }: { teams: TeamOption[] }) {
             ) : history.length === 0 ? (
               <div className="empty">Nenhum feedback enviado ainda.</div>
             ) : (
-              history.map((item) => <HistoryItem key={item.id} item={item} />)
+              history.map((item) => (
+                <HistoryItem
+                  key={item.id}
+                  item={item}
+                  onDelete={handleDelete}
+                  onUpdate={handleUpdate}
+                />
+              ))
             )}
           </div>
         </div>

@@ -164,12 +164,10 @@ function MemberFeedbackModal({ member, onClose }: { member: MemberStats; onClose
                 )}
 
                 {/* Texto */}
-                <p style={{
-                  margin: 0, fontSize: 13, color: "rgba(255,255,255,0.75)",
-                  lineHeight: 1.65, whiteSpace: "pre-wrap",
-                }}>
-                  {f.text}
-                </p>
+                <div
+                  dangerouslySetInnerHTML={{ __html: f.text }}
+                  style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.75)", lineHeight: 1.65 }}
+                />
 
                 {/* Enviado por */}
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", marginTop: 8 }}>

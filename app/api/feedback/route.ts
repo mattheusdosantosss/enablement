@@ -125,7 +125,7 @@ export async function POST(req: Request) {
           </table>
           <div style="background:#131318;border:1px solid #2e2e38;border-radius:8px;padding:16px">
             <p style="margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#a4a4b2">Feedback</p>
-            <p style="margin:0;font-size:14px;color:#f0f0f4;line-height:1.6;white-space:pre-wrap">${text}</p>
+            <div style="margin:0;font-size:14px;color:#f0f0f4;line-height:1.6">${text}</div>
           </div>
         </div>
       </div>
@@ -162,5 +162,76 @@ export async function POST(req: Request) {
     }
   } catch { /* histórico não crítico */ }
 
+  return NextResponse.json({ ok: true });
+}
+
+/* ── helpers ─────────────────────────────────────────────────────────────── */
+async function rewriteHistory(
+  redis: ReturnType<typeof getRedis>,
+  transform: (items: FeedbackEntry[]) => FeedbackEntry[],
+): Promise<{ ok: boolean; notFound?: boolean }> {
+  if (!redis) return { ok: false };
+  const raw = await redis.lrange(HISTORY_KEY, 0, 99);
+  const items = (raw as (string | FeedbackEntry)[]).map((r) =>
+    typeof r === "string" ? JSON.parse(r) : r,
+  ) as FeedbackEntry[];
+
+  const updated = transform(items);
+  if (updated === items) return { notFound: true, ok: false };
+
+  await redis.del(HISTORY_KEY);
+  if (updated.length > 0) {
+    await redis.rpush(HISTORY_KEY, ...updated.map((i) => JSON.stringify(i)));
+  }
+  return { ok: true };
+}
+
+export async function DELETE(req: Request) {
+  const user = lerSessao(cookies().get(COOKIE)?.value);
+  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+
+  let body: { id?: string };
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
+  }
+  const { id } = body ?? {};
+  if (!id) return NextResponse.json({ error: "id obrigatório." }, { status: 400 });
+
+  const redis = getRedis();
+  const { ok, notFound } = await rewriteHistory(redis, (items) => {
+    const filtered = items.filter((i) => i.id !== id);
+    if (filtered.length === items.length) return items; // sentinel: unchanged → notFound
+    return filtered;
+  });
+
+  if (notFound) return NextResponse.json({ error: "Não encontrado." }, { status: 404 });
+  if (!ok)      return NextResponse.json({ error: "Redis indisponível." }, { status: 503 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(req: Request) {
+  const user = lerSessao(cookies().get(COOKIE)?.value);
+  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+
+  let body: { id?: string; text?: string };
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: "Corpo inválido." }, { status: 400 });
+  }
+  const { id, text } = body ?? {};
+  if (!id || !text?.replace(/<[^>]*>/g, "").trim()) {
+    return NextResponse.json({ error: "id e text obrigatórios." }, { status: 400 });
+  }
+
+  const redis = getRedis();
+  const { ok, notFound } = await rewriteHistory(redis, (items) => {
+    const idx = items.findIndex((i) => i.id === id);
+    if (idx === -1) return items;
+    const updated = [...items];
+    updated[idx] = { ...updated[idx], text: String(text) };
+    return updated;
+  });
+
+  if (notFound) return NextResponse.json({ error: "Não encontrado." }, { status: 404 });
+  if (!ok)      return NextResponse.json({ error: "Redis indisponível." }, { status: 503 });
   return NextResponse.json({ ok: true });
 }
